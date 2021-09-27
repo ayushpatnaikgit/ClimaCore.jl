@@ -100,7 +100,7 @@ function init_dry_rising_bubble_2d(x, z)
     ρ = p / R_d / T # density
     ρθ = ρ * θ # potential temperature density
 
-    return (ρ = ρ, ρθ = ρθ, ρuₕ = ρ * Geometry.Cartesian1Vector(0.0))
+    return (ρ = ρ, θ = ρθ, uₕ = Geometry.Cartesian1Vector(0.0))
 end
 
 # initial conditions
@@ -112,17 +112,17 @@ Yc = map(coords) do coord
     bubble
 end;
 
-ρw = map(face_coords) do coord
+w = map(face_coords) do coord
     Geometry.Cartesian3Vector(0.0)
 end;
 
-Y = Fields.FieldVector(Yc = Yc, ρw = ρw);
+Y = Fields.FieldVector(Yc = Yc, w = w);
 
 function rhs!(dY, Y, _, t)
-    ρw = Y.ρw
+    w = Y.w
     Yc = Y.Yc
     dYc = dY.Yc
-    dρw = dY.ρw
+    dw = dY.w
 
     # spectral horizontal operators
     hdiv = Operators.Divergence()
@@ -165,16 +165,16 @@ function rhs!(dY, Y, _, t)
         top = Operators.SetValue(Geometry.Cartesian3Vector(0.0)),
     )
 
-    uₕ = @. Yc.ρuₕ / Yc.ρ
-    w = @. ρw / If(Yc.ρ)
+    uₕ = @. Yc.uₕ
+    w = @. w
     p = @. pressure(Yc.ρθ)
 
     # density
-    @. dYc.ρ = -∂(ρw)
-    @. dYc.ρ -= hdiv(Yc.ρuₕ)
+    @. dYc.ρ = -∂(w)
+    @. dYc.ρ -= hdiv(Yc.uₕ)
 
     # potential temperature
-    @. dYc.ρθ = -(∂(ρw * If(Yc.ρθ / Yc.ρ)))
+    @. dYc.ρθ = -(∂(w * If(θ)))
     @. dYc.ρθ -= hdiv(uₕ * Yc.ρθ)
 
     # horizontal momentum

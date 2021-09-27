@@ -68,7 +68,7 @@ function ∑tendencies!(dT, T, z, t)
         Geometry.Cartesian3Vector(
             FT(∇gaussian(z₀, t; ν = ν, δ = δ, 𝓌 = 𝓌, μ = μ)),
         ),
-    )
+    ) 
     bc_gt = Operators.SetGradient(
         Geometry.Cartesian3Vector(
             FT(∇gaussian(z₁, t; ν = ν, δ = δ, 𝓌 = 𝓌, μ = μ)),
