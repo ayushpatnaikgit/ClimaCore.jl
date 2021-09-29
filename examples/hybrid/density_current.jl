@@ -16,6 +16,7 @@ import ClimaCore:
     Operators
 import ClimaCore.Domains.Geometry: Cartesian2DPoint
 using ClimaCore.Geometry
+using JLD2
 
 using Logging: global_logger
 using TerminalLoggers: TerminalLogger
@@ -56,8 +57,9 @@ function hvspace_2D(
 end
 
 # set up rhs!
-hv_center_space, hv_face_space = hvspace_2D((-500, 500), (0, 1000))
-#hv_center_space, hv_face_space = hvspace_2D((-500,500),(0,30000), 5, 30)
+hv_center_space, hv_face_space = hvspace_2D((-25600, 25600), (0, 6400), 128, 64,4)
+# Δx = 100m
+# Δz = 100m
 
 const MSLP = 1e5 # mean sea level pressure
 const grav = 9.8 # gravitational constant
@@ -78,27 +80,28 @@ end
 Φ(z) = grav * z
 
 # Reference: https://journals.ametsoc.org/view/journals/mwre/140/4/mwr-d-10-05073.1.xml, Section 5a
-function init_dry_rising_bubble_2d(x, z)
+function init_dry_rising_current_2d(x, z)
     x_c = 0.0
-    z_c = 350.0
-    r_c = 250.0
+    z_c = 3000.0
     θ_b = 300.0
-    θ_c = 0.5
+    θ_c = -16.632 # Ullrich & Jablonowski apply the perturbation to T rather than to θ, hence this magnitude
     cp_d = C_p
     cv_d = C_v
     p_0 = MSLP
     g = grav
+    x_r = 4000
+    z_r = 2000
 
     # auxiliary quantities
-    r = sqrt((x - x_c)^2 + (z - z_c)^2)
-    θ_p = r < r_c ? 0.5 * θ_c * (1.0 + cospi(r / r_c)) : 0.0 # potential temperature perturbation
+    r = sqrt((x - x_c)^2/x_r^2 + (z - z_c)^2/z_r^2)
+    θ_p = r <= 1.0 ? 0.5 * θ_c * (1.0 + cospi(r)) : 0.0 # potential temperature perturbation
 
-    θ = θ_b + θ_p # potential temperature
+    θ = θ_b # potential temperature
     π_exn = 1.0 - g * z / cp_d / θ # exner function
     T = π_exn * θ # temperature
     p = p_0 * π_exn^(cp_d / R_d) # pressure
     ρ = p / R_d / T # density
-    ρθ = ρ * θ # potential temperature density
+    ρθ = ρ * (θ_b + θ_p) # potential temperature density
 
     return (ρ = ρ, ρθ = ρθ, ρuₕ = ρ * Geometry.Cartesian1Vector(0.0))
 end
@@ -108,8 +111,8 @@ coords = Fields.coordinate_field(hv_center_space);
 face_coords = Fields.coordinate_field(hv_face_space);
 
 Yc = map(coords) do coord
-    bubble = init_dry_rising_bubble_2d(coord.x, coord.z)
-    bubble
+    current = init_dry_rising_current_2d(coord.x, coord.z)
+    current
 end;
 
 ρw = map(face_coords) do coord
@@ -186,7 +189,7 @@ function rhs!(dY, Y, _, t)
     @. dρw = hdiv(hgrad(ρw))
     Spaces.weighted_dss!(dYc)
 
-    κ = 10.0
+    κ = 3.5
     @. dYc.ρ = κ * hdiv(hgrad(dYc.ρ))
     @. dYc.ρθ = κ * hdiv(hgrad(dYc.ρθ))
     @. dYc.ρuₕ = κ * hdiv(hgrad(dYc.ρuₕ))
@@ -228,8 +231,16 @@ function rhs!(dY, Y, _, t)
     @. dρw -= hdiv(uₕf ⊗ ρw)
 
     # 3) diffusion
-    #=
-    κ = 10.0 # m^2/s
+    
+
+    ∇uₕ = hgrad(Yc.ρuₕ/ Yc.ρ)    
+    ∇uᵥ = ∂f(Yc.ρuᵥ / Yc.ρ)    
+    ∇wₕ = hgrad(ρw /Yfρ)    
+    ∇wᵥ = ∂f(ρw / Yfρ)    
+
+
+
+    κ = 75.0 # m^2/s
 
     Yfρ = @. If(Yc.ρ)
 
@@ -250,7 +261,6 @@ function rhs!(dY, Y, _, t)
 
     # 2b) vertical div of vertial grad of potential temperature
     @. dYc.ρθ += ∂(κ * (Yfρ * ∂f(Yc.ρθ / Yc.ρ)))
-    =#
 
 
     Spaces.weighted_dss!(dYc)
@@ -259,33 +269,43 @@ function rhs!(dY, Y, _, t)
 end
 
 dYdt = similar(Y);
-rhs!(dYdt, Y, nothing, 0.0);
+rhs!(dYdt, Y, nothing, 0.0)
 
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.03
-prob = ODEProblem(rhs!, Y, (0.0, 200.0))
+Δt = 0.1
+prob = ODEProblem(rhs!, Y, (0.0, 1000.0))
 sol = solve(
     prob,
     SSPRK33(),
     dt = Δt,
-    saveat = 1.0,
+    saveat = 50.0,
     progress = true,
     progress_message = (dt, u, p, t) -> t,
 );
+@save "current_output.jld2" sol
 
 ENV["GKSwstype"] = "nul"
 import Plots
 Plots.GRBackend()
 
-dirname = "bubble"
+dirname = "current"
 path = joinpath(@__DIR__, "output", dirname)
 mkpath(path)
 
 # post-processing
 import Plots
 anim = Plots.@animate for u in sol.u
-    Plots.plot(u.Yc.ρθ ./ u.Yc.ρ, clim = (300.0, 300.8))
+    Plots.plot(u.Yc.ρθ ./ u.Yc.ρ)
 end
-Plots.mp4(anim, joinpath(path, "bubble.mp4"), fps = 20)
+Plots.mp4(anim, joinpath(path, "current_theta.mp4"), fps = 20)
+
+    If = Operators.InterpolateC2F(
+        bottom = Operators.Extrapolate(),
+        top = Operators.Extrapolate(),
+    )
+anim = Plots.@animate for u in sol.u
+    Plots.plot(@. u.ρw ./ If(u.Yc.ρ))
+end
+Plots.mp4(anim, joinpath(path, "current_w.mp4"), fps = 20)
