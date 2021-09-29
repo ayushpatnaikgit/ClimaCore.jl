@@ -57,7 +57,8 @@ function hvspace_2D(
 end
 
 # set up rhs!
-hv_center_space, hv_face_space = hvspace_2D((-25600, 25600), (0, 6400), 128, 64,4)
+#hv_center_space, hv_face_space = hvspace_2D((-25600, 25600), (0, 6400), 128, 64,4)
+hv_center_space, hv_face_space = hvspace_2D((-25600, 25600), (0, 6400), 64, 32,4)
 # Δx = 100m
 # Δz = 100m
 
@@ -189,7 +190,7 @@ function rhs!(dY, Y, _, t)
     @. dρw = hdiv(hgrad(ρw))
     Spaces.weighted_dss!(dYc)
 
-    κ = 3.5
+    κ = 0.0
     @. dYc.ρ = κ * hdiv(hgrad(dYc.ρ))
     @. dYc.ρθ = κ * hdiv(hgrad(dYc.ρθ))
     @. dYc.ρuₕ = κ * hdiv(hgrad(dYc.ρuₕ))
@@ -233,35 +234,36 @@ function rhs!(dY, Y, _, t)
     # 3) diffusion
     
 
-    ∇uₕ = hgrad(Yc.ρuₕ/ Yc.ρ)    
-    ∇uᵥ = ∂f(Yc.ρuᵥ / Yc.ρ)    
-    ∇wₕ = hgrad(ρw /Yfρ)    
-    ∇wᵥ = ∂f(ρw / Yfρ)    
-
-
-
     κ = 75.0 # m^2/s
 
-    Yfρ = @. If(Yc.ρ)
+    Yfρ = @. If(Yc.ρ) # Face interpolation
+
+ #  hgrad defined on spectral element nodes
+ #  ∂ = vgrad ... = defined on centers
+    ∇ₕuₕ = @. hgrad(Yc.ρuₕ / Yc.ρ)
+    ∇ᵥuₕ = @. ∂f(Yc.ρuₕ / Yc.ρ)
+    ∇ₕw = @. hgrad(ρw / Yfρ)    
+    ∇ᵥw = @. ∂c(ρw / Yfρ)    
 
     #  1a) horizontal div of horizontal grad of horiz momentun
-    @. dYc.ρuₕ += hdiv(κ * (Yc.ρ * hgrad(Yc.ρuₕ / Yc.ρ)))
+    ρκc = @. Yc.ρ * κ 
+    ρκf = @. Yfρ * κ
+    @. dYc.ρuₕ += hdiv(ρκc * (hgrad(Yc.ρuₕ / Yc.ρ)))
 
     #  1b) vertical div of vertical grad of horiz momentun
-    @. dYc.ρuₕ += uvdivf2c(κ * (Yfρ * ∂f(Yc.ρuₕ / Yc.ρ)))
+    @. dYc.ρuₕ += uvdivf2c(ρκf * (∂f(Yc.ρuₕ / Yc.ρ)))
 
     #  1c) horizontal div of horizontal grad of vert momentum
-    @. dρw += hdiv(κ * (Yfρ * hgrad(ρw / Yfρ)))
+    @. dρw += hdiv(ρκf * (hgrad(ρw / Yfρ)))
 
     #  1d) vertical div of vertical grad of vert momentun
-    @. dρw += vvdivc2f(κ * (Yc.ρ * ∂c(ρw / Yfρ)))
+    @. dρw += vvdivc2f(ρκc *  (∂c(ρw / Yfρ)))
 
     # 2a) horizontal div of horizontal grad of potential temperature
-    @. dYc.ρθ += hdiv(κ * (Yc.ρ * hgrad(Yc.ρθ / Yc.ρ)))
+    @. dYc.ρθ += hdiv(ρκc * (hgrad(Yc.ρθ / Yc.ρ)))
 
     # 2b) vertical div of vertial grad of potential temperature
-    @. dYc.ρθ += ∂(κ * (Yfρ * ∂f(Yc.ρθ / Yc.ρ)))
-
+    @. dYc.ρθ += ∂(ρκf * (∂f(Yc.ρθ / Yc.ρ)))
 
     Spaces.weighted_dss!(dYc)
     Spaces.weighted_dss!(dρw)
@@ -274,8 +276,8 @@ rhs!(dYdt, Y, nothing, 0.0)
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.1
-prob = ODEProblem(rhs!, Y, (0.0, 1000.0))
+Δt = 0.2
+prob = ODEProblem(rhs!, Y, (0.0, 900.0))
 sol = solve(
     prob,
     SSPRK33(),
@@ -296,16 +298,24 @@ mkpath(path)
 
 # post-processing
 import Plots
+
 anim = Plots.@animate for u in sol.u
     Plots.plot(u.Yc.ρθ ./ u.Yc.ρ)
+    #Plots.plot(Operators.matrix_interpolate(u.Yc.ρθ ./ u.Yc.ρ),4)
 end
 Plots.mp4(anim, joinpath(path, "current_theta.mp4"), fps = 20)
 
-    If = Operators.InterpolateC2F(
-        bottom = Operators.Extrapolate(),
-        top = Operators.Extrapolate(),
-    )
+If = Operators.InterpolateC2F(
+   bottom = Operators.Extrapolate(),
+   top = Operators.Extrapolate(),
+)
+
 anim = Plots.@animate for u in sol.u
     Plots.plot(@. u.ρw ./ If(u.Yc.ρ))
 end
 Plots.mp4(anim, joinpath(path, "current_w.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    Plots.plot(Operators.matrix_interpolate(u.Yc.ρθ ./ u.Yc.ρ),4)
+end
+Plots.mp4(anim, joinpath(path, "current_theta_itp.mp4"), fps = 20)
