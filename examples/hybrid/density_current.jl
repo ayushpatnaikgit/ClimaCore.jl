@@ -190,11 +190,11 @@ function rhs!(dY, Y, _, t)
     @. dρw = hdiv(hgrad(ρw))
     Spaces.weighted_dss!(dYc)
 
-    κ = 0.0
-    @. dYc.ρ = κ * hdiv(hgrad(dYc.ρ))
-    @. dYc.ρθ = κ * hdiv(hgrad(dYc.ρθ))
-    @. dYc.ρuₕ = κ * hdiv(hgrad(dYc.ρuₕ))
-    @. dρw = κ * hdiv(hgrad(dρw))
+    κ₄ = 0.0
+    @. dYc.ρ = κ₄ * hdiv(hgrad(dYc.ρ))
+    @. dYc.ρθ = κ₄ * hdiv(hgrad(dYc.ρθ))
+    @. dYc.ρuₕ = κ₄ * hdiv(hgrad(dYc.ρuₕ))
+    @. dρw = κ₄ * hdiv(hgrad(dρw))
 
     uₕ = @. Yc.ρuₕ / Yc.ρ
     w = @. ρw / If(Yc.ρ)
@@ -277,7 +277,7 @@ rhs!(dYdt, Y, nothing, 0.0)
 # run!
 using OrdinaryDiffEq
 Δt = 0.2
-prob = ODEProblem(rhs!, Y, (0.0, 900.0))
+prob = ODEProblem(rhs!, Y, (0.0, 1.0))
 sol = solve(
     prob,
     SSPRK33(),
