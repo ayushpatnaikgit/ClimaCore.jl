@@ -131,7 +131,6 @@ function transform(
     v::CovariantTensor,
     local_geometry::LocalGeometry,
 )
-    @show typeof(v)
     transform(
         ax,
         local_geometry.∂ξ∂x' * transform(dual(axes(local_geometry.∂ξ∂x, 1)), v),

@@ -29,22 +29,25 @@ const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const R_m = R_d # moist R, assumed to be dry
 
-function warp_agnesi_peak(
+function warp_schar(
     coord;
-    a = 100,
-)
-    8 * a^3 / (coord.x^2 + 4 * a^2)
+    h₀ = 250, 
+    λ = 4000,
+    a = 5000,
+)       
+    x = coord.x
+    return h₀*exp(-(x/a)^2)*(cos(π*x/λ))^2
 end
 
 # set up function space
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    helem = 10,
+    helem = 50,
     velem = 50,
     npoly = 4;
     stretch = Meshes.Uniform(),
-    warp_fn = warp_agnesi_peak,
+    warp_fn = warp_schar_peak,
 )
     # build vertical mesh information with stretching in [0, H]
     FT = Float64
@@ -53,7 +56,6 @@ function hvspace_2D(
         Geometry.ZPoint{FT}(zlim[2]);
         boundary_tags = (:bottom, :top),
     )
-
     vertmesh = Meshes.IntervalMesh(vertdomain, stretch, nelems = velem)
     vert_face_space = Spaces.FaceFiniteDifferenceSpace(vertmesh)
     # build horizontal mesh information
@@ -61,13 +63,11 @@ function hvspace_2D(
         Geometry.XPoint{FT}(xlim[1])..Geometry.XPoint{FT}(xlim[2]),
         periodic = true,
     )
-
     # Construct Horizontal Mesh + Space
     horzmesh = Meshes.IntervalMesh(horzdomain; nelems = helem)
     horztopology = Topologies.IntervalTopology(horzmesh)
     quad = Spaces.Quadratures.GLL{npoly + 1}()
     hspace = Spaces.SpectralElementSpace1D(horztopology, quad)
-
     # Apply warp
     z_surface = warp_fn.(Fields.coordinate_field(hspace))
     f_space = Spaces.ExtrudedFiniteDifferenceSpace(
@@ -81,9 +81,8 @@ function hvspace_2D(
 end
 
 # set up function space
-# set up rhs!
-(hv_center_space, hv_face_space) = hvspace_2D((-500, 500), (0, 1000), 10, 20, 4;
-                                            stretch = Meshes.Uniform(), warp_fn=warp_agnesi_peak)
+(hv_center_space, hv_face_space) = hvspace_2D((-15000, 15000), (0, 15000), 25, 25, 4;
+                                            stretch = Meshes.Uniform(), warp_fn=warp_schar);
 
 function pressure(ρθ)
     if ρθ >= 0
@@ -95,8 +94,8 @@ end
 
 Φ(z) = grav * z
 function rayleigh_sponge(z;
-                         z_sponge=900.0,
-                         z_max=1200.0,
+                         z_sponge=12000.0,
+                         z_max=15000.0,
                          α = 1.0,  # Relaxation timescale
                          τ = 0.5,
                          γ = 2.0)
@@ -110,8 +109,8 @@ function rayleigh_sponge(z;
 end
 
 # Reference: https://journals.ametsoc.org/view/journals/mwre/140/4/mwr-d-10-05073.1.xml, Section
-function init_agnesi_2d(x, z)
-    θ₀ = 250.0
+function init_schar_2d(x, z)
+    θ₀ = 280.0
     cp_d = C_p
     cv_d = C_v
     p₀ = MSLP
@@ -123,7 +122,7 @@ function init_agnesi_2d(x, z)
     θ = @. θ₀ * exp(𝒩 ^2 * z / g)
     ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d/R_d)
     ρθ  = @. ρ * θ
-    ρuₕ = @. ρ * Geometry.UVector(20.0)
+    ρuₕ = @. ρ * Geometry.UVector(10.0)
 
     return (ρ = ρ,
             ρθ = ρθ,
@@ -135,11 +134,11 @@ coords = Fields.coordinate_field(hv_center_space)
 face_coords = Fields.coordinate_field(hv_face_space)
 
 Yc = map(coords) do coord
-    agnesi = init_agnesi_2d(coord.x, coord.z)
-    agnesi
+    schar = init_schar_2d(coord.x, coord.z)
+    schar
 end
 
-#Yc = init_agnesi_2d(coords.x, coords.z)
+#Yc = init_schar_2d(coords.x, coords.z)
 
 ρw = map(face_coords) do coord
     Geometry.WVector(0.0)
@@ -278,7 +277,6 @@ function rhs!(dY, Y, _, t)
                 -(∂f(p)) - If(Yc.ρ) * ∂f(Φ(coords.z)),
             ) - vvdivc2f(Ic(ρw ⊗ w)),
         )
-    #=
     hcomp_vertical_momentum = @. BU(
             Geometry.transform( # project
                 Geometry.UAxis(),
@@ -329,11 +327,10 @@ end
 dYdt = similar(Y);
 rhs!(dYdt, Y, nothing, 0.0);
 
-#=
 # run!
 using OrdinaryDiffEq
 Δt = 0.025
-prob = ODEProblem(rhs!, Y, (0.0, 10.0))
+prob = ODEProblem(rhs!, Y, (0.0, 100.0))
 sol = solve(
     prob,
     SSPRK33(),
@@ -347,25 +344,24 @@ ENV["GKSwstype"] = "nul"
 import Plots
 Plots.GRBackend()
 
-dirname = "agnesi_2d"
+dirname = "schar_2d"
 path = joinpath(@__DIR__, "output", dirname)
 mkpath(path)
 
 # post-processing
 import Plots
 anim = Plots.@animate for u in sol.u
-    Plots.plot(u.Yc.ρθ ./ u.Yc.ρ, clim = (300.0, 300.8))
+    Plots.plot(u.Yc.ρθ ./ u.Yc.ρ,)
 end
 Plots.mp4(anim, joinpath(path, "theta.mp4"), fps = 20)
 
 If2c = Operators.InterpolateF2C()
 anim = Plots.@animate for u in sol.u
-    Plots.plot(If2c.(u.ρw) ./ u.Yc.ρ, clim = (-2, 2))
+    Plots.plot(If2c.(u.ρw) ./ u.Yc.ρ,)
 end
 Plots.mp4(anim, joinpath(path, "vel_w.mp4"), fps = 20)
 
 anim = Plots.@animate for u in sol.u
-    Plots.plot(u.Yc.ρuₕ ./ u.Yc.ρ, clim = (-2, 2))
+    Plots.plot(u.Yc.ρuₕ ./ u.Yc.ρ,)
 end
 Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
-=#
