@@ -37,7 +37,7 @@ function hvspace_2D(
     velem = 80,
     npoly = 4;
     stretch = Meshes.Uniform(),
-    warp_fn = warp_agnesi_peak,
+    warp_fn = warp_agnesi,
 )
     # build vertical mesh information with stretching in [0, H]
     FT = Float64
