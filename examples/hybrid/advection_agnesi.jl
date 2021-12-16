@@ -80,7 +80,7 @@ function hvspace_2D(
 end
 
 # set up function space
-(hv_center_space, hv_face_space) = hvspace_2D((-60000, 60000), (0, 20000), 30, 80, 4;
+(hv_center_space, hv_face_space) = hvspace_2D((-60000, 60000), (0, 20000), 20, 80, 6;
                                             stretch = Meshes.Uniform(), warp_fn=warp_agnesi);
 
 function pressure(ρθ)
@@ -93,8 +93,8 @@ end
 
 Φ(z) = grav * z
 function rayleigh_sponge(z;
-                         z_sponge=10000.0,
-                         z_max=20000.0,
+                         z_sponge=12000.0,
+                         z_max=15000.0,
                          α = 0.5,  # Relaxation timescale
                          τ = 0.5,
                          γ = 2.0)
@@ -318,7 +318,9 @@ function rhs!(dY, Y, _, t)
 
     # sponge
     β = @. rayleigh_sponge(coords.z)
-    @. dYc.ρuₕ -= β * Yc.ρuₕ
+    uᵣ = 10.0
+    ρuᵣ = @. Yc.ρ * Geometry.UVector(uᵣ)
+    @. dYc.ρuₕ -= β * (Yc.ρuₕ - ρuᵣ)
     @. dρw -= If(β) * ρw
 
     Spaces.weighted_dss!(dYc)
@@ -338,7 +340,7 @@ sol = solve(
     prob,
     SSPRK33(),
     dt = Δt,
-    saveat = 1.0,
+    saveat = 3600.0,
     progress = true,
     progress_message = (dt, u, p, t) -> t,
 );
@@ -346,13 +348,10 @@ sol = solve(
 ENV["GKSwstype"] = "nul"
 import Plots
 Plots.GRBackend()
-
-dirname = "agnesi_2d"
+dirname = "agnesi_2d_3h"
 path = joinpath(@__DIR__, "output", dirname)
 mkpath(path)
-
 # post-processing
-import Plots
 If2c = Operators.InterpolateF2C()
 u = sol.u
 p1 = Plots.plot(If2c.(u[end].ρw) ./ u[end].Yc.ρ, xlim = (-25000, 25000), ylim = (0, 12000))

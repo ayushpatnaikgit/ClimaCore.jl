@@ -13,49 +13,66 @@ import ClimaCore:
     Topologies,
     Spaces,
     Fields,
-    Operators
+    Operators, 
+    Topographies
 using ClimaCore.Geometry
 
 using Logging: global_logger
 using TerminalLoggers: TerminalLogger
 global_logger(TerminalLogger())
 
+function warp_agnesi(
+    coord;
+    h₀ = 300, 
+    a = 1_000,
+)       
+    x = coord.x
+    return h₀ * a^2 / (x^2 + a^2)
+end
 # set up function space
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    helem = 10,
-    velem = 40,
-    npoly = 4,
+    helem = 30,
+    velem = 80,
+    npoly = 4;
+    stretch = Meshes.Uniform(),
+    warp_fn = warp_agnesi_peak,
 )
+    # build vertical mesh information with stretching in [0, H]
     FT = Float64
     vertdomain = Domains.IntervalDomain(
         Geometry.ZPoint{FT}(zlim[1]),
         Geometry.ZPoint{FT}(zlim[2]);
         boundary_tags = (:bottom, :top),
     )
-    vertmesh = Meshes.IntervalMesh(vertdomain, nelems = velem)
-    vert_center_space = Spaces.CenterFiniteDifferenceSpace(vertmesh)
-
+    vertmesh = Meshes.IntervalMesh(vertdomain, stretch, nelems = velem)
+    vert_face_space = Spaces.FaceFiniteDifferenceSpace(vertmesh)
+    # build horizontal mesh information
     horzdomain = Domains.IntervalDomain(
         Geometry.XPoint{FT}(xlim[1])..Geometry.XPoint{FT}(xlim[2]),
         periodic = true,
     )
+    # Construct Horizontal Mesh + Space
     horzmesh = Meshes.IntervalMesh(horzdomain; nelems = helem)
     horztopology = Topologies.IntervalTopology(horzmesh)
-
     quad = Spaces.Quadratures.GLL{npoly + 1}()
-    horzspace = Spaces.SpectralElementSpace1D(horztopology, quad)
-
-    hv_center_space =
-        Spaces.ExtrudedFiniteDifferenceSpace(horzspace, vert_center_space)
-    hv_face_space = Spaces.FaceExtrudedFiniteDifferenceSpace(hv_center_space)
-    return (hv_center_space, hv_face_space)
+    hspace = Spaces.SpectralElementSpace1D(horztopology, quad)
+    # Apply warp
+    z_surface = warp_fn.(Fields.coordinate_field(hspace))
+    f_space = Spaces.ExtrudedFiniteDifferenceSpace(
+        hspace,
+        vert_face_space,
+        z_surface,
+        Topographies.LinearAdaption(),
+    )
+    c_space = Spaces.CenterExtrudedFiniteDifferenceSpace(f_space)
+    return (c_space,f_space)
 end
 
-# set up rhs!
-hv_center_space, hv_face_space = hvspace_2D((-500, 500), (0, 1000))
-#hv_center_space, hv_face_space = hvspace_2D((-500,500),(0,30000), 5, 30)
+# set up function space
+(hv_center_space, hv_face_space) = hvspace_2D((-500, 500), (0, 1000), 4, 25, 6;
+                                            stretch = Meshes.Uniform(), warp_fn=warp_agnesi);
 
 const MSLP = 1e5 # mean sea level pressure
 const grav = 9.8 # gravitational constant
@@ -234,6 +251,11 @@ function rhs!(dY, Y, _, t)
     @. dYc.ρuₕ += -uvdivf2c(ρw ⊗ If(uₕ))
     @. dYc.ρuₕ -= hdiv(Yc.ρuₕ ⊗ uₕ + p * Ih)
 
+    BU = Operators.SetBoundaryOperator(
+        bottom = Operators.SetValue(Geometry.UVector(0.0)),
+        top = Operators.SetValue(Geometry.UVector(0.0)),
+    )
+
     # vertical momentum
     @. dρw +=
         B(
@@ -242,6 +264,14 @@ function rhs!(dY, Y, _, t)
                 -(∂f(p)) - If(Yc.ρ) * ∂f(Φ(coords.z)),
             ) - vvdivc2f(Ic(ρw ⊗ w)),
         )
+    # horizontal component of vertical momentum
+    @. dYc.ρuₕ += @. Ic(BU(
+            Geometry.transform( # project
+                Geometry.UAxis(),
+                -(∂f(p)) - If(Yc.ρ) * ∂f(Φ(coords.z)),
+            ),
+        ))
+
     uₕf = @. If(Yc.ρuₕ / Yc.ρ) # requires boundary conditions
     @. dρw -= hdiv(uₕf ⊗ ρw)
 
@@ -282,13 +312,13 @@ rhs!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.025
-prob = ODEProblem(rhs!, Y, (0.0, 50.0))
+Δt = 0.02
+prob = ODEProblem(rhs!, Y, (0.0, 500.0))
 sol = solve(
     prob,
     SSPRK33(),
     dt = Δt,
-    saveat = 1.0,
+    saveat = 50.0,
     progress = true,
     progress_message = (dt, u, p, t) -> t,
 );
