@@ -88,26 +88,18 @@ function hvspace_2D(
     return (c_space,f_space)
 end
 
-import Plots
 ENV["GKSwstype"] = "nul"
+import Plots
 Plots.GRBackend()
-dirname = "warp_demo"
+dirname = "agnesi_2d_3h"
 path = joinpath(@__DIR__, "output", dirname)
 mkpath(path)
-
-(cspace,fspace)= hvspace_2D((-500, 500), (0, 2000), 10, 50, 4, 
-                            stretch=Meshes.Uniform(), warp_fn=warp_schar)
-coords = Fields.coordinate_field(cspace)
-x = coords.x
-z = coords.z
-p1 = plot(z)
-Plots.png(p1, joinpath(path, "warp_agnesi"))
-
-(cspace,fspace)= hvspace_2D((-500, 500), (0, 2000), 20, 50, 4, 
-                            stretch=Meshes.Uniform(), warp_fn= warp_schar)
-coords = Fields.coordinate_field(cspace)
-x = coords.x
-z = coords.z
-p2 = plot(z)
-Plots.png(p2, joinpath(path, "warp_schar"))
-## set up rhs!
+# post-processing
+If2c = Operators.InterpolateF2C()
+u = sol.u
+p1 = Plots.plot(If2c.(u[end].ρw) ./ u[end].Yc.ρ, xlim = (-25000, 25000), ylim = (0, 12000))
+p2 = Plots.plot(u[end].Yc.ρuₕ ./ u[end].Yc.ρ, xlim = (-25000, 25000), ylim = (0, 12000))
+p3 = Plots.plot(u[end].Yc.ρθ ./ u[end].Yc.ρ, xlim = (-25000, 25000), ylim = (0, 12000))
+Plots.savefig(p1, path*"/vel_w.png")
+Plots.savefig(p2, path*"/vel_u.png")
+Plots.savefig(p3, path*"/theta.png")
