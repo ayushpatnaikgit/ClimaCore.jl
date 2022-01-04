@@ -121,7 +121,7 @@ function init_agnesi_2d(x, z)
     θ = @. θ₀ * exp(𝒩 ^2 * z / g)
     ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d/R_d)
     ρθ  = @. ρ * θ
-    ρuₕ = @. ρ * Geometry.UVector(10.0)
+    ρuₕ = @. ρ * Geometry.UVector(0.0)
 
     return (ρ = ρ,
             ρθ = ρθ,
@@ -145,35 +145,35 @@ end;
 
 Y = Fields.FieldVector(Yc = Yc, ρw = ρw)
 
-#function energy(Yc, ρu, z)
-#    ρ = Yc.ρ
-#    ρθ = Yc.ρθ
-#    u = ρu / ρ
-#    kinetic = ρ * norm(u)^2 / 2
-#    potential = z * grav * ρ
-#    internal = C_v * pressure(ρθ) / R_d
-#    return kinetic + potential + internal
-#end
-#function combine_momentum(ρuₕ, ρw)
-#    Geometry.transform(Geometry.UWAxis(), ρuₕ) +
-#    Geometry.transform(Geometry.UWAxis(), ρw)
-#end
-#function center_momentum(Y)
-#    If2c = Operators.InterpolateF2C()
-#    combine_momentum.(Y.Yc.ρuₕ, If2c.(Y.ρw))
-#end
-#function total_energy(Y)
-#    ρ = Y.Yc.ρ
-#    ρu = center_momentum(Y)
-#    ρθ = Y.Yc.ρθ
-#    z = Fields.coordinate_field(axes(ρ)).z
-#    sum(energy.(Yc, ρu, z))
-#end
+function energy(Yc, ρu, z)
+    ρ = Yc.ρ
+    ρθ = Yc.ρθ
+    u = ρu / ρ
+    kinetic = ρ * norm(u)^2 / 2
+    potential = z * grav * ρ
+    internal = C_v * pressure(ρθ) / R_d
+    return kinetic + potential + internal
+end
+function combine_momentum(ρuₕ, ρw)
+    Geometry.transform(Geometry.UWAxis(), ρuₕ) +
+    Geometry.transform(Geometry.UWAxis(), ρw)
+end
+function center_momentum(Y)
+    If2c = Operators.InterpolateF2C()
+    combine_momentum.(Y.Yc.ρuₕ, If2c.(Y.ρw))
+end
+function total_energy(Y)
+    ρ = Y.Yc.ρ
+    ρu = center_momentum(Y)
+    ρθ = Y.Yc.ρθ
+    z = Fields.coordinate_field(axes(ρ)).z
+    sum(energy.(Yc, ρu, z))
+end
 
 #energy_0 = total_energy(Y)
 #mass_0 = sum(Yc.ρ) # Computes ∫ρ∂Ω such that quadrature weighting is accounted for.
 
-function rhs!(dY, Y, _, t)
+function rhs!(dY, Y, params, t)
     ρw = Y.ρw
     Yc = Y.Yc
     dYc = dY.Yc
@@ -245,7 +245,7 @@ function rhs!(dY, Y, _, t)
     Spaces.weighted_dss!(dYc)
     Spaces.weighted_dss!(dρw)
 
-    κ₄ = 100.0 # m^4/s
+    κ₄ = 0.0 # m^4/s
     @. dYc.ρθ = -κ₄ * hdiv(Yc.ρ * hgrad(dYc.ρθ))
     @. dYc.ρuₕ = -κ₄ * hdiv(Yc.ρ * hgrad(dYc.ρuₕ))
     @. dρw = -κ₄ * hdiv(Yfρ * hgrad(dρw))
@@ -318,7 +318,7 @@ function rhs!(dY, Y, _, t)
 
     # sponge
     β = @. rayleigh_sponge(coords.z)
-    uᵣ = 10.0
+    uᵣ = 0.0
     ρuᵣ = @. Yc.ρ * Geometry.UVector(uᵣ)
     @. dYc.ρuₕ -= β * (Yc.ρuₕ - ρuᵣ)
     @. dρw -= If(β) * ρw
@@ -329,7 +329,9 @@ function rhs!(dY, Y, _, t)
 end
 
 dYdt = similar(Y);
-rhs!(dYdt, Y, nothing, 0.0);
+
+energy_0 = total_energy(Y)
+mass_0 = sum(Yc.ρ) # Computes ∫ρ∂Ω such that quadrature weighting is accounted for.
 
 # run!
 using OrdinaryDiffEq
@@ -348,7 +350,7 @@ sol = solve(
 ENV["GKSwstype"] = "nul"
 import Plots
 Plots.GRBackend()
-dirname = "agnesi_2d_3h"
+dirname = "agnesi_0flow"
 path = joinpath(@__DIR__, "output", dirname)
 mkpath(path)
 # post-processing
@@ -360,3 +362,10 @@ p3 = Plots.plot(u[end].Yc.ρθ ./ u[end].Yc.ρ, xlim = (-25000, 25000), ylim = (
 Plots.savefig(p1, path*"/vel_w.png")
 Plots.savefig(p2, path*"/vel_u.png")
 Plots.savefig(p3, path*"/theta.png")
+Es = [total_energy(u) for u in sol.u]
+Mass = [sum(u.Yc.ρ) for u in sol.u]
+Plots.png(
+    Plots.plot((Es .- energy_0) ./ energy_0),
+    joinpath(path, "energy.png"),
+)
+Plots.png(Plots.plot((Mass .- mass_0) ./ mass_0), joinpath(path, "mass.png"))
