@@ -121,7 +121,7 @@ function init_agnesi_2d(x, z)
     θ = @. θ₀ * exp(𝒩 ^2 * z / g)
     ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d/R_d)
     ρθ  = @. ρ * θ
-    ρuₕ = @. ρ * Geometry.UVector(0.0)
+    ρuₕ = @. ρ * Geometry.UVector(10.0)
 
     return (ρ = ρ,
             ρθ = ρθ,
@@ -318,7 +318,7 @@ function rhs!(dY, Y, params, t)
 
     # sponge
     β = @. rayleigh_sponge(coords.z)
-    uᵣ = 0.0
+    uᵣ = 10.0
     ρuᵣ = @. Yc.ρ * Geometry.UVector(uᵣ)
     @. dYc.ρuₕ -= β * (Yc.ρuₕ - ρuᵣ)
     @. dρw -= If(β) * ρw
