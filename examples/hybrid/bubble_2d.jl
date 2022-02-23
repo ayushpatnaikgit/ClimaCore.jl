@@ -1,5 +1,7 @@
 using Test
 using LinearAlgebra, StaticArrays
+using DiffEqCallbacks
+using JLD2
 
 import ClimaCore:
     ClimaCore,
@@ -22,8 +24,8 @@ Logging.global_logger(TerminalLoggers.TerminalLogger())
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    helem = 10,
-    velem = 40,
+    helem = 4,
+    velem = 10,
     npoly = 4,
 )
     FT = Float64
@@ -293,54 +295,64 @@ rhs!(dYdt, Y, nothing, 0.0);
 # run!
 using OrdinaryDiffEq
 Δt = 0.03
-prob = ODEProblem(rhs!, Y, (0.0, 500.0))
-
+prob = ODEProblem(rhs!, Y, (0.0, 10Δt))
+# Periodic Callback for output
+const filedir = "test_restart"
+const filename = "bubble2d_restart"
+function output_writer(integrator)
+    mkpath(filedir)
+    savefile = joinpath(filedir, filename * "_$(integrator.t)" * ".jld2")
+    @info "Saving JLD2 with integrator object at $(integrator.t) seconds"
+    JLD2.jldsave(savefile, integrator = integrator, Yend = integrator.u)
+    return nothing
+end
+jld2_callback = PeriodicCallback(output_writer, 2Δt; initial_affect=true)
+@show jld2_callback
 integrator = OrdinaryDiffEq.init(
     prob,
     SSPRK33(),
     dt = Δt,
-    saveat = 25.0,
+    saveat = 5Δt,
     progress = true,
     progress_message = (dt, u, p, t) -> t,
+    callback = jld2_callback, 
 );
-
 if haskey(ENV, "CI_PERF_SKIP_RUN") # for performance analysis
     throw(:exit_profile)
 end
-
 sol = @timev OrdinaryDiffEq.solve!(integrator)
 
-ENV["GKSwstype"] = "nul"
-using ClimaCorePlots, Plots
-Plots.GRBackend()
-
-dir = "bubble_2d"
-path = joinpath(@__DIR__, "output", dir)
-mkpath(path)
-
-# post-processing
-using ClimaCorePlots, Plots
-anim = Plots.@animate for u in sol.u
-    Plots.plot(u.Yc.ρθ ./ u.Yc.ρ, clim = (300.0, 300.8))
-end
-Plots.mp4(anim, joinpath(path, "theta.mp4"), fps = 20)
-
-If2c = Operators.InterpolateF2C()
-anim = Plots.@animate for u in sol.u
-    Plots.plot(If2c.(u.ρw) ./ u.Yc.ρ)
-end
-Plots.mp4(anim, joinpath(path, "vel_w.mp4"), fps = 20)
-
-anim = Plots.@animate for u in sol.u
-    Plots.plot(u.ρuₕ ./ u.Yc.ρ)
-end
-Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
-
-Es = [total_energy(u) for u in sol.u]
-Mass = [sum(u.Yc.ρ) for u in sol.u]
-
-Plots.png(
-    Plots.plot((Es .- energy_0) ./ energy_0),
-    joinpath(path, "energy.png"),
-)
-Plots.png(Plots.plot((Mass .- mass_0) ./ mass_0), joinpath(path, "mass.png"))
+#ENV["GKSwstype"] = "nul"
+#using ClimaCorePlots, Plots
+#Plots.GRBackend()
+#
+#dir = "bubble_2d"
+#path = joinpath(@__DIR__, "output", dir)
+#mkpath(path)
+#
+## post-processing
+#using ClimaCorePlots, Plots
+#anim = Plots.@animate for u in sol.u
+#    Plots.plot(u.Yc.ρθ ./ u.Yc.ρ, clim = (300.0, 300.8))
+#end
+#Plots.mp4(anim, joinpath(path, "theta.mp4"), fps = 20)
+#
+#If2c = Operators.InterpolateF2C()
+#anim = Plots.@animate for u in sol.u
+#    Plots.plot(If2c.(u.ρw) ./ u.Yc.ρ)
+#end
+#Plots.mp4(anim, joinpath(path, "vel_w.mp4"), fps = 20)
+#
+#anim = Plots.@animate for u in sol.u
+#    Plots.plot(u.ρuₕ ./ u.Yc.ρ)
+#end
+#Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
+#
+#Es = [total_energy(u) for u in sol.u]
+#Mass = [sum(u.Yc.ρ) for u in sol.u]
+#
+#Plots.png(
+#    Plots.plot((Es .- energy_0) ./ energy_0),
+#    joinpath(path, "energy.png"),
+#)
+#Plots.png(Plots.plot((Mass .- mass_0) ./ mass_0), joinpath(path, "mass.png"))
