@@ -173,7 +173,7 @@ function IntervalMesh(
     guess₊ = -dz_surface / zₜ / log(1 - FT(1 / (nelems + 1)))
     hₛsol = RootSolvers.find_zero(
         find_surface,
-        RootSolvers.SecantMethod(guess₋, guess₊),
+        RootSolvers.SecantMethod(FT(guess₋), FT(guess₊)),
         RootSolvers.CompactSolution(),
         RootSolvers.ResidualTolerance(FT(1e-3)),
     )
@@ -193,7 +193,7 @@ function IntervalMesh(
     guess₊ = ((zₜ - zₛ) - dz_top) / zₜ / FT(log(nelems - 1))
     hₜsol = RootSolvers.find_zero(
         find_top,
-        RootSolvers.SecantMethod(guess₋, guess₊),
+        RootSolvers.SecantMethod(FT(guess₋), FT(guess₊)),
         RootSolvers.CompactSolution(),
         RootSolvers.ResidualTolerance(FT(1e-3)),
     )
