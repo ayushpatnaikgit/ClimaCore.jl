@@ -171,6 +171,7 @@ function IntervalMesh(
     # to approx bracket the lower / upper bounds of root sol
     guess₋ = -dz_surface / zₜ / log(1 - FT(1 / (nelems - 1)))
     guess₊ = -dz_surface / zₜ / log(1 - FT(1 / (nelems + 1)))
+    @show typeof(guess⁻)
     hₛsol = RootSolvers.find_zero(
         find_surface,
         RootSolvers.SecantMethod(FT(guess₋), FT(guess₊)),
