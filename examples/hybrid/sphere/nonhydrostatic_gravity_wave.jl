@@ -29,7 +29,7 @@ r(λ, ϕ) = R * acos(sind(ϕ_c_nhw) * sind(ϕ) + cosd(ϕ_c_nhw) * cosd(ϕ) * cos
 
 # Variables required for driver.jl (modify as needed)
 helems, zelems, npoly = 4, 10, 4
-number_of_days = 1.0
+number_of_days = 5.0
 t_end = FT(60 * 60 * 24 * number_of_days)
 dt = FT(400)
 dt_save_to_sol = FT(60 * 60 * 1/4)
@@ -139,15 +139,22 @@ function postprocessing(sol, p, output_dir, usempi = false)
 
         anim = Plots.@animate for Y in sol_global
             ᶜv = Geometry.UVVector.(Y.c.uₕ).components.data.:2
-            Plots.plot(ᶜv, level = 3, clim = (-10,10))
+            Plots.plot(ᶜv, level = 1, clim = (-10,10))
         end
         Plots.mp4(anim, joinpath(output_dir, "v.mp4"), fps = 5)
         
         anim = Plots.@animate for Y in sol_global
             ᶜu = Geometry.UVVector.(Y.c.uₕ).components.data.:1
-            Plots.plot(ᶜu, level = 3, clim = (-10,10))
+            Plots.plot(ᶜu, level = 1, clim = (-10,10))
         end
         Plots.mp4(anim, joinpath(output_dir, "u.mp4"), fps = 5)
+        
+        anim = Plots.@animate for Y in sol_global
+            ᶠw = Geometry.WVector.(Y.f.w).components.data.:1
+            ᶜw = @. ᶜinterp(ᶠw)
+            Plots.plot(ᶜw, level = 1, clim = (-0.005,0.005))
+        end
+        Plots.mp4(anim, joinpath(output_dir, "w.mp4"), fps = 5)
         
         anim = Plots.@animate for Y in sol_global
             ᶜρ = Y.c.ρ
@@ -159,9 +166,10 @@ function postprocessing(sol, p, output_dir, usempi = false)
             ᶜz = ᶜlocal_geometry.coordinates.z
             eint = @. Y.c.ρe / ᶜρ - (grav * ᶜz) - 1/2 * norm_sqr(ᶜuvw)
             T = @. eint / cv_d + T_tri 
-            Plots.plot(T .- 300, level = 3)
+            Plots.plot(T .- 300, level = 1)
         end
         Plots.mp4(anim, joinpath(output_dir, "T.mp4"), fps = 5)
+        
         
         vtk_counter = 0
         for Y in sol_global
@@ -175,7 +183,7 @@ function postprocessing(sol, p, output_dir, usempi = false)
             ᶜz = ᶜlocal_geometry.coordinates.z
             eint = @. Y.c.ρe / ᶜρ - (grav * ᶜz) - 1/2 * norm_sqr(ᶜuvw)
             T = @. eint / cv_d + T_tri 
-            ClimaCoreVTK.writevtk(joinpath(output_dir,"nhw_$(vtk_counter)"), T)
+            ClimaCoreVTK.writevtk(joinpath(output_dir,"nhw_$(vtk_counter)"), (Tprime=T, uh1 = ᶜu, uh2 = ᶜv, w = ᶜw))
         end
     end
 end
