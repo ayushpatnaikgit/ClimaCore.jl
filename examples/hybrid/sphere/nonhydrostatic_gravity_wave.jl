@@ -1,94 +1,82 @@
-using Test
-using LinearAlgebra
+using ClimaCorePlots, Plots, ClimaCoreVTK
+using ClimaCore.DataLayouts
 
-import ClimaCore:
-    ClimaCore,
-    slab,
-    Spaces,
-    Domains,
-    Meshes,
-    Geometry,
-    Topologies,
-    Spaces,
-    Fields,
-    Operators
+include("baroclinic_wave_utilities.jl")
+
+const sponge = false
 
 using OrdinaryDiffEq: ODEProblem, solve, SSPRK33
 
 import Logging
 import TerminalLoggers
+
 Logging.global_logger(TerminalLoggers.TerminalLogger())
 
 # Nonhydrostatic gravity wave
 # Reference: https://climate.ucdavis.edu/pubs/UJ2012JCP.pdf Section 5.4
 
-const R = 6.37122e6 # radius
-const grav = 9.8 # gravitational constant
-const Ω = 0.0 # Earth rotation (radians / sec)
-const R_d = 287.058 # R dry (gas constant / mol mass dry air)
-const κ = 2 / 7 # kappa
-const γ = 1.4 # heat capacity ratio
-const cp_d = R_d / κ # heat capacity at constant pressure
-const cv_d = cp_d - R_d # heat capacity at constant volume
-const T_tri = 273.16 # triple point temperature
 const N = 0.01 # Brunt-Vaisala frequency
 const S = grav^2 / cp_d / N^2
-const T_0 = 300 # isothermal atmospheric temperature
+const T_0_nhw = 300 # isothermal atmospheric temperature
 const Δθ = 10.0 # maximum potential temperature perturbation
 const R_t = R / 3 # width of the perturbation
 const L_z = 20.0e3 # vertial wave length of the perturbation
 const p_0 = 1.0e5 # reference pressure
-const λ_c = 180.0 # center longitude of the cosine bell
-const ϕ_c = 0.0 # center latitude of the cosine bell
+const λ_c_nhw = 180.0 # center longitude of the cosine bell
+const ϕ_c_nhw = 0.0 # center latitude of the cosine bell
 
-# set up function space
-function sphere_3D(
-    R = 6.37122e6,
-    zlim = (0, 12.0e3),
-    helem = 4,
-    zelem = 12,
-    npoly = 4,
+r(λ, ϕ) = R * acos(sind(ϕ_c_nhw) * sind(ϕ) + cosd(ϕ_c_nhw) * cosd(ϕ) * cosd(λ - λ_c_nhw))
+
+# Variables required for driver.jl (modify as needed)
+helems, zelems, npoly = 4, 10, 4
+number_of_days = 1.0
+t_end = FT(60 * 60 * 24 * number_of_days)
+dt = FT(400)
+dt_save_to_sol = FT(60 * 60 * 1/4)
+dt_save_to_disk = FT(0) # 0 means don't save to disk
+ode_algorithm = OrdinaryDiffEq.Rosenbrock23
+jacobian_flags = (; ∂ᶜ𝔼ₜ∂ᶠ𝕄_mode = :no_∂ᶜp∂ᶜK, ∂ᶠ𝕄ₜ∂ᶜρ_mode = :exact)
+
+horzdomain = Domains.SphereDomain(R)
+vertdomain = Domains.IntervalDomain(
+    Geometry.ZPoint{FT}(FT(0)),
+    Geometry.ZPoint{FT}(FT(12e3));
+    boundary_tags = (:bottom, :top),
 )
-    FT = Float64
-    vertdomain = Domains.IntervalDomain(
-        Geometry.ZPoint{FT}(zlim[1]),
-        Geometry.ZPoint{FT}(zlim[2]);
-        boundary_tags = (:bottom, :top),
+horzmesh = Meshes.EquiangularCubedSphere(horzdomain, helems)
+vertmesh = Meshes.IntervalMesh(vertdomain, nelems = zelems)
+quad = Spaces.Quadratures.GLL{npoly + 1}()
+
+Nv = Meshes.nelements(vertmesh)
+Nf_center, Nf_face = 4, 1
+vert_center_space = Spaces.CenterFiniteDifferenceSpace(vertmesh)
+
+if usempi
+    horztopology = Topologies.DistributedTopology2D(horzmesh, Context)
+    comms_ctx =
+        Spaces.setup_comms(Context, horztopology, quad, Nv + 1, Nf_center)
+    global_topology = Topologies.Topology2D(horzmesh)
+    global_horz_space = Spaces.SpectralElementSpace2D(global_topology, quad)
+    global_center_space = Spaces.ExtrudedFiniteDifferenceSpace(
+        global_horz_space,
+        vert_center_space,
     )
-    vertmesh = Meshes.IntervalMesh(vertdomain, nelems = zelem)
-    vert_center_space = Spaces.CenterFiniteDifferenceSpace(vertmesh)
+    global_face_space =
+        Spaces.FaceExtrudedFiniteDifferenceSpace(global_center_space)
 
-    horzdomain = Domains.SphereDomain(R)
-    horzmesh = Meshes.EquiangularCubedSphere(horzdomain, helem)
+else
     horztopology = Topologies.Topology2D(horzmesh)
-    quad = Spaces.Quadratures.GLL{npoly + 1}()
-    horzspace = Spaces.SpectralElementSpace2D(horztopology, quad)
-
-    hv_center_space =
-        Spaces.ExtrudedFiniteDifferenceSpace(horzspace, vert_center_space)
-    hv_face_space = Spaces.FaceExtrudedFiniteDifferenceSpace(hv_center_space)
-    return (hv_center_space, hv_face_space)
+    comms_ctx = nothing
 end
 
-Φ(z) = grav * z
+horzspace = Spaces.SpectralElementSpace2D(horztopology, quad, comms_ctx)
 
-function pressure(ρ, e, normuvw, z)
-    I = e - Φ(z) - normuvw^2 / 2
-    T = I / cv_d + T_tri
-    return ρ * R_d * T
-end
+hv_center_space =
+    Spaces.ExtrudedFiniteDifferenceSpace(horzspace, vert_center_space)
+hv_face_space = Spaces.FaceExtrudedFiniteDifferenceSpace(hv_center_space)
 
-# set up 3D domain - spherical shell
-hv_center_space, hv_face_space = sphere_3D(R, (0, 10.0e3), 5, 5, 4)
-
-# initial conditions
-coords = Fields.coordinate_field(hv_center_space)
-face_coords = Fields.coordinate_field(hv_face_space)
-
-r(λ, ϕ) = R * acos(sind(ϕ_c) * sind(ϕ) + cosd(ϕ_c) * cosd(ϕ) * cosd(λ - λ_c))
 
 function initial_condition(ϕ, λ, z)
-    rd = r(λ, ϕ)
     if rd < R_t
         s = 0.5 * (1 + cos(pi * rd / R_t))
     else
@@ -104,181 +92,90 @@ function initial_condition(ϕ, λ, z)
     return (ρ = ρ, ρe = ρe)
 end
 
-# Coriolis
-const f =
-    @. Geometry.Contravariant3Vector(Geometry.WVector(2 * Ω * sind(coords.lat)))
-
-Yc = map(coord -> initial_condition(coord.lat, coord.long, coord.z), coords)
-uₕ = map(_ -> Geometry.Covariant12Vector(0.0, 0.0), coords)
-w = map(_ -> Geometry.Covariant3Vector(0.0), face_coords)
-Y = Fields.FieldVector(Yc = Yc, uₕ = uₕ, w = w)
-
-function rhs!(dY, Y, _, t)
-    cρ = Y.Yc.ρ # scalar on centers
-    fw = Y.w # Covariant3Vector on faces
-    cuₕ = Y.uₕ # Covariant12Vector on centers
-    cρe = Y.Yc.ρe # scalar on centers
-
-    dρ = dY.Yc.ρ
-    dw = dY.w
-    duₕ = dY.uₕ
-    dρe = dY.Yc.ρe
-
-
-    # 0) update w at the bottom
-    # fw = -g^31 cuₕ/ g^33
-
-    hdiv = Operators.Divergence()
-    hwdiv = Operators.WeakDivergence()
-    hgrad = Operators.Gradient()
-    hwgrad = Operators.WeakGradient()
-    hcurl = Operators.Curl()
-    hwcurl = Operators.WeakCurl()
-
-    dρ .= 0 .* cρ
-
-    If2c = Operators.InterpolateF2C()
-    Ic2f = Operators.InterpolateC2F(
-        bottom = Operators.Extrapolate(),
-        top = Operators.Extrapolate(),
-    )
-    cw = If2c.(fw)
-    cuvw = Geometry.Covariant123Vector.(cuₕ) .+ Geometry.Covariant123Vector.(cw)
-
-    ce = @. cρe / cρ
-    cp = @. pressure(cρ, ce, norm(cuvw), coords.z)
-
-    ### HYPERVISCOSITY
-    # 1) compute hyperviscosity coefficients
-    ch_tot = @. ce + cp / cρ
-    χe = @. dρe = hwdiv(hgrad(ch_tot))
-    χuₕ = @. duₕ =
-        hwgrad(hdiv(cuₕ)) - Geometry.Covariant12Vector(
-            hwcurl(Geometry.Covariant3Vector(hcurl(cuₕ))),
-        )
-
-    Spaces.weighted_dss!(dρe)
-    Spaces.weighted_dss!(duₕ)
-
-    κ₄ = 1.0e17 # m^4/s
-    @. dρe = -κ₄ * hwdiv(cρ * hgrad(χe))
-    @. duₕ =
-        -κ₄ * (
-            hwgrad(hdiv(χuₕ)) - Geometry.Covariant12Vector(
-                hwcurl(Geometry.Covariant3Vector(hcurl(χuₕ))),
-            )
-        )
-
-    # 1) Mass conservation
-
-    dw .= fw .* 0
-
-    # 1.a) horizontal divergence
-    dρ .-= hdiv.(cρ .* (cuvw))
-
-    # 1.b) vertical divergence
-    vdivf2c = Operators.DivergenceF2C(
-        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-    )
-    # we want the total u³ at the boundary to be zero: we can either constrain
-    # both to be zero, or allow one to be non-zero and set the other to be its
-    # negation
-
-    # explicit part
-    dρ .-= vdivf2c.(Ic2f.(cρ .* cuₕ))
-    # implicit part
-    dρ .-= vdivf2c.(Ic2f.(cρ) .* fw)
-
-    # 2) Momentum equation
-
-    # curl term
-    hcurl = Operators.Curl()
-    # effectively a homogeneous Dirichlet condition on u₁ at the boundary
-    vcurlc2f = Operators.CurlC2F(
-        bottom = Operators.SetCurl(Geometry.Contravariant12Vector(0.0, 0.0)),
-        top = Operators.SetCurl(Geometry.Contravariant12Vector(0.0, 0.0)),
-    )
-    cω³ = hcurl.(cuₕ) # Contravariant3Vector
-    fω¹² = hcurl.(fw) # Contravariant12Vector
-    fω¹² .+= vcurlc2f.(cuₕ) # Contravariant12Vector
-
-    # cross product
-    # convert to contravariant
-    # these will need to be modified with topography
-    fu¹² =
-        Geometry.Contravariant12Vector.(
-            Geometry.Covariant123Vector.(Ic2f.(cuₕ)),
-        ) # Contravariant12Vector in 3D
-    fu³ = Geometry.Contravariant3Vector.(Geometry.Covariant123Vector.(fw))
-    @. dw -= fω¹² × fu¹² # Covariant3Vector on faces
-    @. duₕ -= If2c(fω¹² × fu³)
-
-    # Needed for 3D:
-    @. duₕ -=
-        (f + cω³) ×
-        Geometry.Contravariant12Vector(Geometry.Covariant123Vector(cuₕ))
-
-    @. duₕ -= hgrad(cp) / cρ
-    vgradc2f = Operators.GradientC2F(
-        bottom = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
-        top = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
-    )
-    @. dw -= vgradc2f(cp) / Ic2f(cρ)
-
-    cE = @. (norm(cuvw)^2) / 2 + Φ(coords.z)
-    @. duₕ -= hgrad(cE)
-    @. dw -= vgradc2f(cE)
-
-    # 3) total energy
-
-    @. dρe -= hdiv(cuvw * (cρe + cp))
-    @. dρe -= vdivf2c(fw * Ic2f(cρe + cp))
-    @. dρe -= vdivf2c(Ic2f(cuₕ * (cρe + cp)))
-
-    Spaces.weighted_dss!(dY.Yc)
-    Spaces.weighted_dss!(dY.uₕ)
-    Spaces.weighted_dss!(dY.w)
-
-    return dY
+additional_cache(ᶜlocal_geometry, ᶠlocal_geometry, dt) = merge(
+    hyperdiffusion_cache(ᶜlocal_geometry, ᶠlocal_geometry; κ₄ = FT(2e17)),
+    sponge ? rayleigh_sponge_cache(ᶜlocal_geometry, ᶠlocal_geometry, dt) : (;),
+    held_suarez_cache(ᶜlocal_geometry),
+)
+function additional_tendency!(Yₜ, Y, p, t, comms_ctx = nothing)
+    hyperdiffusion_tendency!(Yₜ, Y, p, t, comms_ctx)
+    sponge && rayleigh_sponge_tendency!(Yₜ, Y, p, t)
+    held_suarez_tendency!(Yₜ, Y, p, t)
 end
 
-dYdt = similar(Y)
-rhs!(dYdt, Y, nothing, 0.0)
+center_initial_condition(local_geometry) = center_initial_condition(local_geometry, Val(:ρe), GravityWave())
 
-# run!
-using OrdinaryDiffEq
-# Solve the ODE
-time_end = 600
-dt = 3
-prob = ODEProblem(rhs!, Y, (0.0, time_end))
-sol = solve(
-    prob,
-    SSPRK33(),
-    dt = dt,
-    saveat = dt,
-    progress = true,
-    adaptive = false,
-    progress_message = (dt, u, p, t) -> t,
-)
+function postprocessing(sol, p, output_dir, usempi = false)
+    sol_global = []
+    if usempi
+        for sol_step in sol.u
+            sol_step_values_center_global =
+                DataLayouts.gather(comms_ctx, Fields.field_values(sol_step.c))
+            sol_step_values_face_global =
+                DataLayouts.gather(comms_ctx, Fields.field_values(sol_step.f))
+            if ClimaComms.iamroot(Context)
+                sol_step_global = Fields.FieldVector(
+                    c = Fields.Field(
+                        sol_step_values_center_global,
+                        global_center_space,
+                    ),
+                    f = Fields.Field(
+                        sol_step_values_face_global,
+                        global_face_space,
+                    ),
+                )
+                push!(sol_global, sol_step_global)
+            end
+        end
+        if ClimaComms.iamroot(Context)
+        end
+    else
+        sol_global = sol.u
+    end
 
-@info "Solution L₂ norm at time t = 0: ", norm(Y.Yc.ρe)
-@info "Solution L₂ norm at time t = $(time_end): ", norm(sol.u[end].Yc.ρe)
+    if !usempi || (usempi && ClimaComms.iamroot(Context))
+        @info "L₂ norm of ρe at t = $(sol.t[1]): $(norm(sol_global[1].c.ρe))"
+        @info "L₂ norm of ρe at t = $(sol.t[end]): $(norm(sol_global[end].c.ρe))"
 
-# TODO: visualization artifacts
-
-# ENV["GKSwstype"] = "nul"
-# using ClimaCorePlots, Plots
-# Plots.GRBackend()
-# dir = "nonhydrostatic_gravity_wave"
-# path = joinpath(@__DIR__, "output", dir)
-# mkpath(path)
-
-# function linkfig(figpath, alt = "")
-#     # buildkite-agent upload figpath
-#     # link figure in logs if we are running on CI
-#     if get(ENV, "BUILDKITE", "") == "true"
-#         artifact_url = "artifact://$figpath"
-#         print("\033]1338;url='$(artifact_url)';alt='$(alt)'\a\n")
-#     end
-# end
+        anim = Plots.@animate for Y in sol_global
+            ᶜv = Geometry.UVVector.(Y.c.uₕ).components.data.:2
+            Plots.plot(ᶜv, level = 3, clim = (-10,10))
+        end
+        Plots.mp4(anim, joinpath(output_dir, "v.mp4"), fps = 5)
+        
+        anim = Plots.@animate for Y in sol_global
+            ᶜu = Geometry.UVVector.(Y.c.uₕ).components.data.:1
+            Plots.plot(ᶜu, level = 3, clim = (-10,10))
+        end
+        Plots.mp4(anim, joinpath(output_dir, "u.mp4"), fps = 5)
+        
+        anim = Plots.@animate for Y in sol_global
+            ᶜρ = Y.c.ρ
+            ᶜu = Geometry.UVVector.(Y.c.uₕ).components.data.:1
+            ᶜv = Geometry.UVVector.(Y.c.uₕ).components.data.:2
+            ᶠw = Geometry.WVector.(Y.f.w).components.data.:1
+            ᶜw = ᶜinterp.(ᶠw)
+            ᶜuvw = @. Geometry.UVWVector(Y.c.uₕ) + Geometry.UVWVector(ᶜinterp(Y.f.w))
+            ᶜz = ᶜlocal_geometry.coordinates.z
+            eint = @. Y.c.ρe / ᶜρ - (grav * ᶜz) - 1/2 * norm_sqr(ᶜuvw)
+            T = @. eint / cv_d + T_tri 
+            Plots.plot(T .- 300, level = 3)
+        end
+        Plots.mp4(anim, joinpath(output_dir, "T.mp4"), fps = 5)
+        
+        vtk_counter = 0
+        for Y in sol_global
+            vtk_counter += 1
+            ᶜρ = Y.c.ρ
+            ᶜu = Geometry.UVVector.(Y.c.uₕ).components.data.:1
+            ᶜv = Geometry.UVVector.(Y.c.uₕ).components.data.:2
+            ᶠw = Geometry.WVector.(Y.f.w).components.data.:1
+            ᶜw = ᶜinterp.(ᶠw)
+            ᶜuvw = @. Geometry.UVWVector(Y.c.uₕ) + Geometry.UVWVector(ᶜinterp(Y.f.w))
+            ᶜz = ᶜlocal_geometry.coordinates.z
+            eint = @. Y.c.ρe / ᶜρ - (grav * ᶜz) - 1/2 * norm_sqr(ᶜuvw)
+            T = @. eint / cv_d + T_tri 
+            ClimaCoreVTK.writevtk(joinpath(output_dir,"nhw_$(vtk_counter)"), T)
+        end
+    end
+end

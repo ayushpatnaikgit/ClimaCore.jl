@@ -8,6 +8,11 @@ const grav = FT(9.80616)
 const Ω = FT(7.29212e-5)
 include("../staggered_nonhydrostatic_model.jl")
 
+abstract type InitialConditionType end
+
+struct BaroclinicWave <: InitialConditionType end
+struct GravityWave <: InitialConditionType end
+
 # Constants required for balanced flow and baroclinic wave initial conditions
 const R = FT(6.371229e6)
 const k = 3
@@ -81,7 +86,40 @@ cond(λ, ϕ) = (0 < r(λ, ϕ) < d_0) * (r(λ, ϕ) != R * pi)
 
 function center_initial_condition(
     local_geometry,
-    ᶜ𝔼_name;
+    ᶜ𝔼_name,
+    𝒫::GravityWave;
+    is_balanced_flow = false,
+)
+    (; lat, long, z) = local_geometry.coordinates
+    rd = r(long, lat)
+    if rd < R_t
+        s = 0.5 * (1 + cos(pi * rd / R_t))
+    else
+        s = 0.0
+    end
+    p = p_0 * (1 - S / T_0_nhw + S / T_0_nhw * exp(-N^2 * z / grav))^(cp_d / R_d)
+    θ = T_0_nhw * exp(N^2 * z / grav) + Δθ * s * sin(2 * pi * z / L_z)
+    T = θ * (p / p_0)^κ
+    ρ = p / R_d / T
+    e = cv_d * (T - T_tri) + grav * z
+    ρe = ρ * e
+    uₕ_local = Geometry.UVVector(0.0, 0.0)
+    uₕ = Geometry.Covariant12Vector(uₕ_local, local_geometry)
+    if ᶜ𝔼_name === Val(:ρθ)
+        ρθ = ρ * θ
+        return (; ρ, ρθ, uₕ)
+    elseif ᶜ𝔼_name === Val(:ρe)
+        ρe = ρe
+        return (; ρ, ρe, uₕ)
+    elseif ᶜ𝔼_name === Val(:ρe_int)
+        ρe_int = ρ * cv_d * (T - T_tri)
+        return (; ρ, ρe_int, uₕ)
+    end
+end
+function center_initial_condition(
+    local_geometry,
+    ᶜ𝔼_name, 
+    𝒫::BaroclinicWave;
     is_balanced_flow = false,
 )
     (; lat, long, z) = local_geometry.coordinates
