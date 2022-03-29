@@ -29,11 +29,11 @@ r(λ, ϕ) = R * acos(sind(ϕ_c_nhw) * sind(ϕ) + cosd(ϕ_c_nhw) * cosd(ϕ) * cos
 
 # Variables required for driver.jl (modify as needed)
 helems, zelems, npoly = 4, 10, 4
-number_of_days = 5.0
+number_of_days = 1.0
 t_end = FT(60 * 60 * 24 * number_of_days)
 dt = FT(400)
 dt_save_to_sol = FT(60 * 60 * 1/4)
-dt_save_to_disk = FT(0) # 0 means don't save to disk
+dt_save_to_disk = FT(60 * 60 * 1/4) # 0 means don't save to disk
 ode_algorithm = OrdinaryDiffEq.Rosenbrock23
 jacobian_flags = (; ∂ᶜ𝔼ₜ∂ᶠ𝕄_mode = :no_∂ᶜp∂ᶜK, ∂ᶠ𝕄ₜ∂ᶜρ_mode = :exact)
 
