@@ -31,6 +31,90 @@ LocalVector(
     ::LocalGeometry{I},
 ) where {I} = u
 
+# Covariant <-> Cartesian
+function transform(
+    ax::CartesianAxis,
+    v::CovariantTensor,
+    local_geometry::LocalGeometry,
+)
+    transform(
+        ax,
+        local_geometry.∂ξ∂x' * transform(dual(axes(local_geometry.∂ξ∂x, 1)), v),
+    )
+end
+function transform(
+    ax::CovariantAxis,
+    v::CartesianTensor,
+    local_geometry::LocalGeometry,
+)
+    transform(
+        ax,
+        local_geometry.∂x∂ξ' * transform(dual(axes(local_geometry.∂x∂ξ, 1)), v),
+    )
+end
+function transform(
+    ax::LocalAxis,
+    v::CovariantTensor,
+    local_geometry::LocalGeometry,
+)
+    @show typeof(v)
+    transform(
+        ax,
+        local_geometry.∂ξ∂x' * transform(dual(axes(local_geometry.∂ξ∂x, 1)), v),
+    )
+end
+function transform(
+    ax::CovariantAxis,
+    v::LocalTensor,
+    local_geometry::LocalGeometry,
+)
+    transform(
+        ax,
+        local_geometry.∂x∂ξ' * transform(dual(axes(local_geometry.∂x∂ξ, 1)), v),
+    )
+end
+
+# Contravariant <-> Cartesian
+function transform(
+    ax::ContravariantAxis,
+    v::CartesianTensor,
+    local_geometry::LocalGeometry,
+)
+    transform(
+        ax,
+        local_geometry.∂ξ∂x * transform(dual(axes(local_geometry.∂ξ∂x, 2)), v),
+    )
+end
+function transform(
+    ax::CartesianAxis,
+    v::ContravariantTensor,
+    local_geometry::LocalGeometry,
+)
+    transform(
+        ax,
+        local_geometry.∂x∂ξ * transform(dual(axes(local_geometry.∂x∂ξ, 2)), v),
+    )
+end
+function transform(
+    ax::ContravariantAxis,
+    v::LocalTensor,
+    local_geometry::LocalGeometry,
+)
+    transform(
+        ax,
+        local_geometry.∂ξ∂x * transform(dual(axes(local_geometry.∂ξ∂x, 2)), v),
+    )
+end
+function transform(
+    ax::LocalAxis,
+    v::ContravariantTensor,
+    local_geometry::LocalGeometry,
+)
+    transform(
+        ax,
+        local_geometry.∂x∂ξ * transform(dual(axes(local_geometry.∂x∂ξ, 2)), v),
+    )
+end
 (::Type{<:ContravariantVector{<:Any, I}})(
     u::ContravariantVector,
     ::LocalGeometry,
@@ -197,7 +281,7 @@ function ContravariantVector(
         ContravariantAxis{(1, 3)}(),
         transform(CovariantAxis{(1, 3)}(), vector2),
         local_geometry,
-    )
+    )bubble_2d_rhotheta.jl
     u¹, u³ = components(vector3)
     return Contravariant123Vector(u¹, v, u³)
 end
@@ -208,7 +292,6 @@ end
 Transform the first axis of the vector or tensor `V` to `axis`.
 """
 function transform end
-
 """
     project(axis, V[, local_geometry])
 
