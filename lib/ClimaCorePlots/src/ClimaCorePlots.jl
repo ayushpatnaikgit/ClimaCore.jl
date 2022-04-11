@@ -249,7 +249,7 @@ end
 # 2D hybrid plot
 RecipesBase.@recipe function f(
     field::Fields.Field{<:Any, S};
-    hinterpolate = 0,
+    hinterpolate = 4,
     ncolors = 256,
 ) where {
     S <: Spaces.ExtrudedFiniteDifferenceSpace{
