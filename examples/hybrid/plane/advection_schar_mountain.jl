@@ -289,7 +289,7 @@ function rhs!(dY, Y, _, t)
     @. dρθ += ∂(κ₂ * (Yfρ * ∂f(ρθ / ρ)))
 
     # Application of Sponge [Lateral + Top-Boundary Sponge]
-    @. dρuₕ -= (rayleigh_sponge_x(coords.x) * (ρuₕ - Geometry.UVector(uᵣ)) + rayleigh_sponge(coords.z) * (ρuₕ - Geometry.UVector(uᵣ)))
+    @. dρuₕ -= (rayleigh_sponge_x(coords.x) * (ρuₕ - ρ * Geometry.UVector(uᵣ)) + rayleigh_sponge(coords.z) * (ρuₕ - ρ* Geometry.UVector(uᵣ)))
     @. dρw -= (rayleigh_sponge_x(face_coords.x) * ρw + rayleigh_sponge(face_coords.z) * ρw)
 
     Spaces.weighted_dss!(dYc)
