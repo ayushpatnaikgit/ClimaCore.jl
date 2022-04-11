@@ -62,6 +62,7 @@ const γ_ratio = 1.4 # heat capacity ratio
 const C_p = R_d * γ_ratio / (γ_ratio - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ_ratio - 1) # heat capacity at constant volume
 const R_m = R_d # moist R, assumed to be dry
+const uᵣ = 10.0
 
 function pressure(ρθ)
     if ρθ >= 0
@@ -132,7 +133,7 @@ end;
 
 Y = Fields.FieldVector(
     Yc = Yc,
-    ρuₕ = Yc.ρ .* Ref(Geometry.UVector(10.0)),
+    ρuₕ = Yc.ρ .* Ref(Geometry.UVector(uᵣ)),
     ρw = ρw,
 )
 
@@ -288,7 +289,7 @@ function rhs!(dY, Y, _, t)
     @. dρθ += ∂(κ₂ * (Yfρ * ∂f(ρθ / ρ)))
 
     # Application of Sponge [Lateral + Top-Boundary Sponge]
-    @. dρuₕ -= (rayleigh_sponge_x(coords.x) * ρuₕ + rayleigh_sponge(coords.z) * ρuₕ)
+    @. dρuₕ -= (rayleigh_sponge_x(coords.x) * (ρuₕ - Geometry.UVector(uᵣ)) + rayleigh_sponge(coords.z) * (ρuₕ - Geometry.UVector(uᵣ)))
     @. dρw -= (rayleigh_sponge_x(face_coords.x) * ρw + rayleigh_sponge(face_coords.z) * ρw)
 
     Spaces.weighted_dss!(dYc)
