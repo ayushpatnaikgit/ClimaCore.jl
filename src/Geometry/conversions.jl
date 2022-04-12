@@ -197,7 +197,7 @@ function ContravariantVector(
         ContravariantAxis{(1, 3)}(),
         transform(CovariantAxis{(1, 3)}(), vector2),
         local_geometry,
-    )bubble_2d_rhotheta.jl
+    )
     u¹, u³ = components(vector3)
     return Contravariant123Vector(u¹, v, u³)
 end
