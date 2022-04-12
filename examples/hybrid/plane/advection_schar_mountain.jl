@@ -11,8 +11,10 @@ import ClimaCore:
     Topologies,
     Spaces,
     Fields,
+    Hypsography,
     Operators
 import ClimaCore.Geometry: ⊗
+using DiffEqCallbacks
 
 import Logging
 import TerminalLoggers
@@ -52,8 +54,60 @@ function hvspace_2D(
     return (hv_center_space, hv_face_space)
 end
 
+function warp_agnesi(
+    coord;
+    h₀ = 250,
+    λ = 4000,
+    a_c = 5000,
+)       
+    x = coord.x
+    return h₀*exp(-(x/a_c)^2)*(cos(π*x/λ))^2
+end
+function hvspace_2D_warp(
+    xlim = (0, π),
+    zlim = (0, 1),
+    helem = 64,
+    velem = 32,
+    npoly = 4;
+    stretch = Meshes.Uniform(),
+    warp_fn = warp_agnesi,
+)
+    FT = Float64
+    vertdomain = Domains.IntervalDomain(
+        Geometry.ZPoint{FT}(zlim[1]),
+        Geometry.ZPoint{FT}(zlim[2]);
+        boundary_tags = (:bottom, :top),
+    )
+    vertmesh = Meshes.IntervalMesh(vertdomain, stretch, nelems = velem)
+    vert_face_space = Spaces.FaceFiniteDifferenceSpace(vertmesh)
+
+    # Generate Horizontal Space
+    horzdomain = Domains.IntervalDomain(
+        Geometry.XPoint{FT}(xlim[1]),
+        Geometry.XPoint{FT}(xlim[2]);
+        periodic = true,
+    )
+    horzmesh = Meshes.IntervalMesh(horzdomain; nelems = helem)
+    horztopology = Topologies.IntervalTopology(horzmesh)
+    quad = Spaces.Quadratures.GLL{npoly + 1}()
+    hspace = Spaces.SpectralElementSpace1D(horztopology, quad)
+
+    # Extrusion
+    z_surface = warp_fn.(Fields.coordinate_field(hspace))
+    f_space = Spaces.ExtrudedFiniteDifferenceSpace(
+        hspace,
+        vert_face_space,
+        Hypsography.LinearAdaption(),
+        z_surface,
+    )
+    c_space = Spaces.CenterExtrudedFiniteDifferenceSpace(f_space)
+
+    return (c_space, f_space)
+end
+
 # set up rhs!
-hv_center_space, hv_face_space = hvspace_2D((-30000, 30000), (0, 25000))
+#hv_center_space, hv_face_space = hvspace_2D((-30000, 30000), (0, 30000))
+hv_center_space, hv_face_space = hvspace_2D_warp((-30000, 30000), (0, 30000))
 
 const MSLP = 1e5 # mean sea level pressure
 const grav = 9.8 # gravitational constant
@@ -117,13 +171,40 @@ function init_advection_schar_2d(x, z)
     ρθ = ρ * θ # potential temperature density
     return (ρ = ρ, ρθ = ρθ)
 end
+function init_dc_2d(x, z)
+    x_c = 0.0
+    z_c = 3000.0
+    r_c = 1.0
+    x_r = 4000.0
+    z_r = 2000.0
+    θ_b = 300.0
+    θ_c = -0.0
+    cp_d = C_p
+    cv_d = C_v
+    p_0 = MSLP
+    g = grav
+
+    # auxiliary quantities
+    r = sqrt((x - x_c)^2 / x_r^2 + (z - z_c)^2 / z_r^2)
+    θ_p = r < r_c ? 0.5 * θ_c * (1.0 + cospi(r / r_c)) : 0.0 # potential temperature perturbation
+
+    θ = θ_b + θ_p # potential temperature
+    π_exn = 1.0 - Φ(z) / cp_d / θ # exner function
+    T = π_exn * θ # temperature
+    p = p_0 * π_exn^(cp_d / R_d) # pressure
+    ρ = p / R_d / T # density
+    ρθ = ρ*θ
+
+    return (ρ = ρ, ρθ = ρθ)
+end
 
 # initial conditions
 coords = Fields.coordinate_field(hv_center_space)
 face_coords = Fields.coordinate_field(hv_face_space)
 
 Yc = map(coords) do coord
-    advection_over_mountain = init_advection_schar_2d(coord.x, coord.z)
+    #advection_over_mountain = init_advection_schar_2d(coord.x, coord.z)
+    advection_over_mountain = init_dc_2d(coord.x, coord.z)
     advection_over_mountain
 end
 
@@ -239,7 +320,7 @@ function rhs!(dY, Y, _, t)
     Spaces.weighted_dss!(dρuₕ)
     Spaces.weighted_dss!(dρw)
 
-    κ₄ = 0.0 # m^4/s
+    κ₄ = 1e4 # m^4/s
     @. dρθ = -κ₄ * hwdiv(ρ * hgrad(dρθ))
     @. dρuₕ = -κ₄ * hwdiv(ρ * hgrad(dρuₕ))
     @. dρw = -κ₄ * hwdiv(Yfρ * hgrad(dρw))
@@ -265,14 +346,14 @@ function rhs!(dY, Y, _, t)
     # vertical momentum
     z = coords.z
     @. dρw += B(
-        Geometry.transform(Geometry.WAxis(), -(∂f(p)) - If(ρ) * ∂f(Φ(z))) -
+        Geometry.project(Geometry.WAxis(), -(∂f(p)) - If(ρ) * ∂f(Φ(z))) -
         vvdivc2f(Ic(ρw ⊗ w)),
     )
     uₕf = @. If(ρuₕ / ρ) # requires boundary conditions
     @. dρw -= hdiv(uₕf ⊗ ρw)
 
     ### DIFFUSION
-    κ₂ = 75.0 # m^2/s
+    κ₂ = 0.0 # m^2/s
     #  1a) horizontal div of horizontal grad of horiz momentun
     @. dρuₕ += hwdiv(κ₂ * (ρ * hgrad(ρuₕ / ρ)))
     #  1b) vertical div of vertical grad of horiz momentun
@@ -289,8 +370,14 @@ function rhs!(dY, Y, _, t)
     @. dρθ += ∂(κ₂ * (Yfρ * ∂f(ρθ / ρ)))
 
     # Application of Sponge [Lateral + Top-Boundary Sponge]
-    @. dρuₕ -= (rayleigh_sponge_x(coords.x) * (ρuₕ - ρ * Geometry.UVector(uᵣ)) + rayleigh_sponge(coords.z) * (ρuₕ - ρ* Geometry.UVector(uᵣ)))
-    @. dρw -= (rayleigh_sponge_x(face_coords.x) * ρw + rayleigh_sponge(face_coords.z) * ρw)
+    ᶜβ = @. rayleigh_sponge(coords.z)
+    ᶜβx = @. rayleigh_sponge_x(coords.x)
+    ᶠβ = @. rayleigh_sponge(face_coords.z)
+    ᶠβx = @. rayleigh_sponge_x(face_coords.x)
+    #@. dρuₕ -= (ᶜβx * (ρuₕ - ρ * Geometry.UVector(uᵣ)))
+    @. dρuₕ -= (ᶜβ * (ρuₕ - ρ * Geometry.UVector(uᵣ)))
+    #@. dρw -= (ᶠβx * ρw)
+    @. dρw -= (ᶠβ * ρw)
 
     Spaces.weighted_dss!(dYc)
     Spaces.weighted_dss!(dρuₕ)
@@ -298,14 +385,19 @@ function rhs!(dY, Y, _, t)
     return dY
 end
 
-dYdt = similar(Y);
-rhs!(dYdt, Y, nothing, 0.0);
 
 
 # run!
 using OrdinaryDiffEq
 Δt = 0.1
-prob = ODEProblem(rhs!, Y, (0.0, 900.0))
+dYdt = similar(Y);
+cb_dss = PeriodicCallback(
+        int -> map(f -> Spaces.weighted_dss!(f), Fields._values(int.u)),
+        Δt;
+        initial_affect = true,
+       )
+rhs!(dYdt, Y, nothing, 0.0);
+prob = ODEProblem(rhs!, Y, (0.0, 100.0))
 
 integrator = OrdinaryDiffEq.init(
     prob,
@@ -314,6 +406,7 @@ integrator = OrdinaryDiffEq.init(
     saveat = 50.0,
     progress = true,
     progress_message = (dt, u, p, t) -> t,
+    callback = cb_dss
 );
 
 if haskey(ENV, "CI_PERF_SKIP_RUN") # for performance analysis
@@ -326,7 +419,8 @@ ENV["GKSwstype"] = "nul"
 using ClimaCorePlots, Plots
 Plots.GRBackend()
 
-dir = "schar_mountain"
+#dir = "schar_mountain"
+dir = "schar_mountain_topo"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
