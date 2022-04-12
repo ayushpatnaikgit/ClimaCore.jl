@@ -31,14 +31,16 @@ const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const R_m = R_d # moist R, assumed to be dry
 const FT = Float64
+const uᵣ = FT(0)
 
 function warp_agnesi(
     coord;
-    h₀ = 1, 
-    a = 10_000,
+    h₀ = 250,
+    λ = 4000,
+    a_c = 5000,
 )       
     x = coord.x
-    return h₀ * a^2 / (x^2 + a^2)
+    return h₀*exp(-(x/a_c)^2)*(cos(π*x/λ))^2
 end
 
 function hvspace_2D(
@@ -82,7 +84,6 @@ function hvspace_2D(
     return (c_space, f_space)
 end
 
-
 function hvspace_2D_nowarp(
     xlim = (0, π),
     zlim = (0, 1),
@@ -124,10 +125,10 @@ using ClimaCorePlots, Plots
 
 
 # set up function space
-(hv_center_space, hv_face_space) = hvspace_2D((-60000, 60000), (0, 20000), 80, 40, 4;
-                                            stretch = Meshes.Uniform(), warp_fn=warp_agnesi);
-#(hv_center_space, hv_face_space) = hvspace_2D_nowarp((-60000, 60000), (0, 20000), 80, 40, 4;
-#                                            stretch = Meshes.Uniform());
+#(hv_center_space, hv_face_space) = hvspace_2D((-30000, 30000), (0, 25000), 30, 40, 4;
+#                                            stretch = Meshes.Uniform(), warp_fn=warp_agnesi);
+(hv_center_space, hv_face_space) = hvspace_2D_nowarp((-30000, 30000), (0, 10000), 30, 40, 4;
+                                            stretch = Meshes.Uniform());
 function pressure(ρθ)
     if ρθ >= 0
         return MSLP * (R_d * ρθ / MSLP)^γ
@@ -138,8 +139,8 @@ end
 
 Φ(z) = grav * z
 function rayleigh_sponge(z;
-                         z_sponge=12000.0,
-                         z_max=15000.0,
+                         z_sponge=15000.0,
+                         z_max=25000.0,
                          α = 0.5,  # Relaxation timescale
                          τ = 0.5,
                          γ = 2.0)
@@ -149,6 +150,20 @@ function rayleigh_sponge(z;
         return β_sponge
     else
         return eltype(z)(0)
+    end
+end
+
+function rayleigh_sponge_x(x;
+                         Δ_sponge=20000.0,
+                         α = 0.5,  # Relaxation timescale
+                         τ = 0.5,
+                         γ = 2.0)
+    if x >= 20000.0 ||  x <= -20000.0
+        r = (abs(x)-Δ_sponge)  / (10000.0)
+        β_sponge = α * sinpi(τ * r)^γ
+        return β_sponge
+    else
+        return eltype(x)(0)
     end
 end
 
@@ -166,7 +181,7 @@ function init_agnesi_2d(x, z)
     θ = @. θ₀ * exp(𝒩 ^2 * z / g)
     ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d/R_d)
     ρθ  = @. ρ * θ
-    ρuₕ = @. ρ * Geometry.UVector(10.0)
+    ρuₕ = @. ρ * Geometry.UVector(uᵣ)
 
     return (ρ = ρ,
             ρθ = ρθ,
@@ -220,9 +235,6 @@ energy_0 = total_energy(Y)
 mass_0 = sum(Yc.ρ) # Computes ∫ρ∂Ω such that quadrature weighting is accounted for.
 
 function rhs!(dY, Y, params, t)
-    
-    Spaces.weighted_dss!(Y.Yc)
-    Spaces.weighted_dss!(Y.ρw)
     
     ρw = Y.ρw
     Yc = Y.Yc
@@ -328,13 +340,13 @@ function rhs!(dY, Y, params, t)
                 -(∂f(p)) - If(Yc.ρ) * ∂f(Φ(coords.z)),
             ) - vvdivc2f(Ic(ρw ⊗ w)),
         )
-    # horizontal component of vertical momentum
-    @. dYc.ρuₕ += @. Ic(BU(
-            Geometry.project( # project
-                Geometry.UAxis(),
-                -(∂f(p)) - If(Yc.ρ) * ∂f(Φ(coords.z)),
-            ),
-        ))
+#    # horizontal component of vertical momentum
+#    @. dYc.ρuₕ += @. Ic(BU(
+#            Geometry.project( # project
+#                Geometry.UAxis(),
+#                -(∂f(p)) - If(Yc.ρ) * ∂f(Φ(coords.z)),
+#            ),
+#        ))
 
     # vertical component of horizontal momentum
     uₕf = @. If(Yc.ρuₕ / Yc.ρ) # requires boundary conditions
@@ -359,10 +371,12 @@ function rhs!(dY, Y, params, t)
 
     # sponge
     β = @. rayleigh_sponge(coords.z)
-    uᵣ = 10.0
+    βx = @. rayleigh_sponge_x(coords.x)
     ρuᵣ = @. Yc.ρ * Geometry.UVector(uᵣ)
     @. dYc.ρuₕ -= β * (Yc.ρuₕ - ρuᵣ)
+    @. dYc.ρuₕ -= βx * (Yc.ρuₕ - ρuᵣ)
     @. dρw -= If(β) * ρw
+    @. dρw -= If(βx) * ρw
 
     Spaces.weighted_dss!(dYc)
     Spaces.weighted_dss!(dρw)
@@ -371,7 +385,7 @@ end
 
 dYdt = similar(Y);
 
-dt = 0.1
+dt = 0.5
 energy_0 = total_energy(Y)
 mass_0 = sum(Yc.ρ) # Computes ∫ρ∂Ω such that quadrature weighting is accounted for.
 cb_dss = PeriodicCallback(
@@ -381,13 +395,13 @@ cb_dss = PeriodicCallback(
        )
 # run!
 using OrdinaryDiffEq
-timeend = 3600*4
+timeend = 3600*1
 prob = ODEProblem(rhs!, Y, (0.0, timeend))
 sol = solve(
     prob,
     SSPRK33(),
     dt = dt,
-    saveat = 1800,
+    saveat = 3600*0.5,
     progress = true,
     progress_message = (dt, u, p, t) -> t,
     callback = cb_dss
@@ -402,9 +416,9 @@ mkpath(path)
 # post-processing
 If2c = Operators.InterpolateF2C()
 u = sol.u
-p1 = Plots.plot(If2c.(u[end].ρw) ./ u[end].Yc.ρ, xlim = (-25000, 25000), ylim = (0, 12000))
-p2 = Plots.plot(u[end].Yc.ρuₕ ./ u[end].Yc.ρ, xlim = (-25000, 25000), ylim = (0, 12000))
-p3 = Plots.plot(u[end].Yc.ρθ ./ u[end].Yc.ρ, xlim = (-25000, 25000), ylim = (0, 12000))
+p1 = Plots.plot(If2c.(u[end].ρw) ./ u[end].Yc.ρ, xlim = (-30000, 30000), ylim = (0, 25000))
+p2 = Plots.plot(u[end].Yc.ρuₕ ./ u[end].Yc.ρ, xlim = (-30000, 30000), ylim = (0, 25000))
+p3 = Plots.plot(u[end].Yc.ρθ ./ u[end].Yc.ρ, xlim = (-30000, 30000), ylim = (0, 25000))
 Plots.savefig(p1, path*"/vel_w.png")
 Plots.savefig(p2, path*"/vel_u.png")
 Plots.savefig(p3, path*"/theta.png")

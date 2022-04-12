@@ -81,7 +81,7 @@ function init_density_current_2d(x, z)
     x_r = 4000.0
     z_r = 2000.0
     θ_b = 300.0
-    θ_c = -15.0
+    θ_c = -0.0
     cp_d = C_p
     cv_d = C_v
     p_0 = MSLP
