@@ -111,7 +111,7 @@ function adapt_space!(
             elseif v == Nv + 1
                 # if this is the domain max face level compute the metric
                 # extrapolating from the top face level of the domain
-                2 * fZ_column[v] - cZ_column[v - 1]
+                2 * (fZ_column[v] - cZ_column[v - 1])
             else
                 cZ_column[v] - cZ_column[v - 1]
             end
