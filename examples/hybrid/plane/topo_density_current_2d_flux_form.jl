@@ -11,7 +11,8 @@ import ClimaCore:
     Topologies,
     Spaces,
     Fields,
-    Operators
+    Operators, 
+    Hypsography
 import ClimaCore.Geometry: ⊗
 
 import Logging
