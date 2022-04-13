@@ -23,7 +23,7 @@ function warp_surface(coord)
   x = Geometry.component(coord,1)
   FT = eltype(x)
   #FT(200)*(sin(2*π*x/1000))^2
-  return FT(0)
+  return  FT(200)*sin(π*x / 6400)^2
 end
 
 function hvspace_2D(
@@ -260,7 +260,7 @@ function rhs!(dY, Y, _, t)
     # vertical momentum
     z = coords.z
     @. dρw += B(
-        Geometry.transform(Geometry.WAxis(), -(∂f(p)) - If(ρ) * ∂f(Φ(z))) -
+        Geometry.project(Geometry.WAxis(), -(∂f(p)) - If(ρ) * ∂f(Φ(z))) -
         vvdivc2f(Ic(ρw ⊗ w)),
     )
     uₕf = @. If(ρuₕ / ρ) # requires boundary conditions
@@ -295,7 +295,7 @@ rhs!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.3
+Δt = 0.1
 prob = ODEProblem(rhs!, Y, (0.0, 900.0))
 
 integrator = OrdinaryDiffEq.init(
@@ -317,7 +317,7 @@ ENV["GKSwstype"] = "nul"
 using ClimaCorePlots, Plots
 Plots.GRBackend()
 
-dir = "dc_fluxform"
+dir = "dc_fluxform_topo"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 

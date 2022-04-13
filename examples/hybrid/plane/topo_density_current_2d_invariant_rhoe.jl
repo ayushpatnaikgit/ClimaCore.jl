@@ -27,7 +27,7 @@ function warp_surface(coord)
   x = Geometry.component(coord,1)
   FT = eltype(x)
   #FT(200)*(sin(2*π*x/1000))^2
-  return FT(0)
+  return FT(0) * x
 end
 function hvspace_2D(
     xlim = (-π, π),
@@ -314,7 +314,7 @@ ENV["GKSwstype"] = "nul"
 import Plots, ClimaCorePlots
 Plots.GRBackend()
 
-dir = "dc_invariant_etot"
+dir = "dc_invariant_etot_topo"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
