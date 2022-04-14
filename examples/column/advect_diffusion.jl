@@ -16,22 +16,26 @@ Logging.global_logger(TerminalLoggers.TerminalLogger())
 
 const FT = Float64
 
-n = 32
+n = 8
 z₀ = FT(0)
 z₁ = FT(10)
 t₀ = FT(0)
 t₁ = FT(10)
 μ = FT(-1 / 2)
-ν = FT(5)
+ν = FT(0.5)
 𝓌 = FT(1)
 δ = FT(1)
+H_scale = FT(5)
+dir = "advect_diffusion_$(n)GE_1_2"
 
 domain = Domains.IntervalDomain(
     Geometry.ZPoint{FT}(z₀),
     Geometry.ZPoint{FT}(z₁),
     boundary_names = (:bottom, :top),
 )
-mesh = Meshes.IntervalMesh(domain, nelems = n)
+#stretching = Meshes.ExponentialStretching(H_scale)
+stretching = Meshes.GeneralizedExponentialStretching(0.1,4.0)
+mesh = Meshes.IntervalMesh(domain, stretching, nelems = n)
 
 cs = Spaces.CenterFiniteDifferenceSpace(mesh)
 fs = Spaces.FaceFiniteDifferenceSpace(cs)
@@ -102,7 +106,6 @@ ENV["GKSwstype"] = "nul"
 using ClimaCorePlots, Plots
 Plots.GRBackend()
 
-dir = "advect_diffusion"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 

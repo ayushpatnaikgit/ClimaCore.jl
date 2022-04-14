@@ -23,7 +23,7 @@ function warp_surface(coord)
   x = Geometry.component(coord,1)
   FT = eltype(x)
   #FT(200)*(sin(2*π*x/1000))^2
-  return  FT(200)*sin(π*x / 6400)^2
+  return 8*(250)^2/(x^2 + 4*250^2)
 end
 
 function hvspace_2D(

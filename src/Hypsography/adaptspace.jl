@@ -32,12 +32,15 @@ function reconstruct_metric(
 ) where {T}
     v∂x∂ξ = Geometry.components(∂x∂ξ)
     v∇z = Geometry.components(∇z)
+    if v∇z[1] <= 1e-10
+      v∇z = eltype(Δz)(0)
+    end
     Geometry.AxisTensor(axes(∂x∂ξ), @SMatrix [
         v∂x∂ξ[1, 1] 0
         v∇z[1] Δz
     ])
+  return ∂x∂ξ
 end
-
 function reconstruct_metric(
     ∂x∂ξ::Geometry.Axis2Tensor{
         T,
@@ -79,7 +82,7 @@ function adapt_space!(
     cZ = If2c.(fZ)
 
     # DSS the interpolated horizontal gradients as well
-    c∇Z = If2c.(f∇Z)
+    c∇Z = grad.(cZ)
     Spaces.weighted_dss!(c∇Z)
 
     Ni, Nj, _, Nv, Nh = size(space.center_local_geometry)
@@ -181,7 +184,6 @@ function adapt_space!(
         else
             Geometry.component.(coords, 3)
         end
-    # TODO Generalise 178 so that it works always with the last coordinate
     vertical_domain = Topologies.domain(space.vertical_topology)
     domain_max = Geometry.component(vertical_domain.coord_max, 1)
     f∇Z = Fields.Field(

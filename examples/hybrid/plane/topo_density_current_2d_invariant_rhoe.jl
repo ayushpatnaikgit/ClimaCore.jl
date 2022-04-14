@@ -26,8 +26,11 @@ global_logger(TerminalLogger())
 function warp_surface(coord)
   x = Geometry.component(coord,1)
   FT = eltype(x)
-  #FT(200)*(sin(2*π*x/1000))^2
-  return FT(0) * x
+  λ = 5000
+  ac = 10000
+  hc = 1500
+  return hc * exp(-(x/ac)^2)*(cos(π*x/λ))^2
+  #return 1000*8*(1500)^2/((x-1000)^2 + 4*1500^2)
 end
 function hvspace_2D(
     xlim = (-π, π),
@@ -291,8 +294,8 @@ function make_dss_func()
   dss_func(Y,t,integrator) = foreach(_dss!,Fields._values(Y))
   return dss_func
 end
-dss_func = make_dss_func
-dss_callback = FunctionSavingCallback(dss_func, func_start=true)
+dss_func = make_dss_func()
+dss_callback = FunctionCallingCallback(dss_func, func_start=true)
 prob = ODEProblem(rhs_invariant!, Y, (0.0, timeend))
 integrator = OrdinaryDiffEq.init(
     prob,
