@@ -25,6 +25,8 @@ global_logger(TerminalLogger())
 
 function warp_surface(coord)
   # Parameters from GMD-9-2007-2016
+  # Specification for Agnesi Mountain following 
+  # Ulrich and Guerra [2016 GMD]
   x = Geometry.component(coord,1)
   FT = eltype(x)
   λ = 5000
@@ -82,7 +84,7 @@ const γ = 1.4 # heat capacity ratio
 const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
-const uᵣ = 10.0
+const uᵣ = 1.0
 const kinematic_viscosity = 75.0 #m²/s
  
 Φ(z) = grav * z
@@ -111,10 +113,13 @@ end
 coords = Fields.coordinate_field(hv_center_space)
 face_coords = Fields.coordinate_field(hv_face_space)
 
+# Assign initial conditions to cell center, cell face variables
+# Group scalars (ρ, ρe) in Yc 
+# Retain uₕ and w as separate components of velocity vector (primitive variables)
 Yc = map(coord -> init_advection_over_mountain(coord.x, coord.z), coords)
 w = map(_ -> Geometry.Covariant3Vector(0.0), face_coords)
-uₕ_local = map(_ -> Geometry.UVector(10.0), coords)
-uₕ = map(_ -> Geometry.Covariant3Vector.(uₕ_local), coords)
+uₕ_local = map(_ -> Geometry.UWVector(10.0, 0.0), coords)
+uₕ = Geometry.Covariant1Vector.(uₕ_local)
 
 ᶜlg = Fields.local_geometry_field(hv_center_space)
 ᶠlg = Fields.local_geometry_field(hv_face_space)
@@ -284,8 +289,8 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-timeend = 900.0
-Δt = 0.3
+timeend = 3600.0
+Δt = 0.5
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
