@@ -20,10 +20,13 @@ import TerminalLoggers
 Logging.global_logger(TerminalLoggers.TerminalLogger())
 
 function warp_surface(coord)
+  # Parameters from GMD-9-2007-2016
   x = Geometry.component(coord,1)
   FT = eltype(x)
-  #FT(200)*(sin(2*π*x/1000))^2
-  return 8*(250)^2/(x^2 + 4*250^2)
+  λ = 5000
+  ac = 4000
+  hc = 250
+  return hc * exp(-(x/ac)^2)*(cos(π*x/λ))^2
 end
 
 function hvspace_2D(
@@ -75,6 +78,8 @@ const γ = 1.4 # heat capacity ratio
 const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const R_m = R_d # moist R, assumed to be dry
+const uᵣ = 10.0
+const T_0 = 273.16
 
 function pressure(ρθ)
     if ρθ >= 0
@@ -87,30 +92,37 @@ end
 Φ(z) = grav * z
 
 # Reference: https://journals.ametsoc.org/view/journals/mwre/140/4/mwr-d-10-05073.1.xml, Section 5a
-function init_density_current_2d(x, z)
-    x_c = 0.0
-    z_c = 3000.0
-    r_c = 1.0
-    x_r = 4000.0
-    z_r = 2000.0
-    θ_b = 300.0
-    θ_c = -15.0
+#function init_schar_mountain_2d(x, z)
+#    θ₀ = 280.0
+#    cp_d = C_p
+#    cv_d = C_v
+#    p₀ = MSLP
+#    g = grav
+#    𝒩 = 0.01
+#    π_exner = @. exp(-g * z / (cp_d * θ₀))
+#    θ = @. θ₀ * exp(𝒩 ^2 * z / g)
+#    T = π_exner * θ # temperature
+#    ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d/R_d)
+#    uₕ_local = uᵣ#@. Geometry.UVector(uᵣ)
+#    K = 1/2 * norm_sqr(uₕ_local)
+#    e = @. cv_d * (T - T_0) + Φ(z) + K 
+#    ρe = @. ρ * e
+#    return (ρ = ρ,
+#            ρe = ρe)
+#end
+function init_schar_mountain_2d(x, z)
+    θ₀ = 280.0
     cp_d = C_p
     cv_d = C_v
-    p_0 = MSLP
+    p₀ = MSLP
     g = grav
-
-    # auxiliary quantities
-    r = sqrt((x - x_c)^2 / x_r^2 + (z - z_c)^2 / z_r^2)
-    θ_p = r < r_c ? 0.5 * θ_c * (1.0 + cospi(r / r_c)) : 0.0 # potential temperature perturbation
-
-    θ = θ_b + θ_p # potential temperature
-    π_exn = 1.0 - Φ(z) / cp_d / θ # exner function
-    T = π_exn * θ # temperature
-    p = p_0 * π_exn^(cp_d / R_d) # pressure
-    ρ = p / R_d / T # density
-    ρθ = ρ * θ # potential temperature density
-    return (ρ = ρ, ρθ = ρθ)
+    𝒩 = 0.01
+    π_exner = @. exp(-g * z / (cp_d * θ₀))
+    θ = @. θ₀ * exp(𝒩 ^2 * z / g)
+    ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d/R_d)
+    ρθ = @. ρ * θ
+    return (ρ = ρ,
+            ρθ = ρθ)
 end
 
 # initial conditions
@@ -118,8 +130,8 @@ coords = Fields.coordinate_field(hv_center_space)
 face_coords = Fields.coordinate_field(hv_face_space)
 
 Yc = map(coords) do coord
-    bubble = init_density_current_2d(coord.x, coord.z)
-    bubble
+    dc = init_schar_mountain_2d(coord.x, coord.z)
+    dc
 end
 
 ρw = map(face_coords) do coord
@@ -128,7 +140,7 @@ end;
 
 Y = Fields.FieldVector(
     Yc = Yc,
-    ρuₕ = Yc.ρ .* Ref(Geometry.UVector(0.0)),
+    ρuₕ = Yc.ρ .* Ref(Geometry.UVector(10.0)),
     ρw = ρw,
 )
 
@@ -234,7 +246,7 @@ function rhs!(dY, Y, _, t)
     Spaces.weighted_dss!(dρuₕ)
     Spaces.weighted_dss!(dρw)
 
-    κ₄ = 0.0 # m^4/s
+    κ₄ = 1e4 # m^4/s
     @. dρθ = -κ₄ * hwdiv(ρ * hgrad(dρθ))
     @. dρuₕ = -κ₄ * hwdiv(ρ * hgrad(dρuₕ))
     @. dρw = -κ₄ * hwdiv(Yfρ * hgrad(dρw))
@@ -296,7 +308,7 @@ rhs!(dYdt, Y, nothing, 0.0);
 # run!
 using OrdinaryDiffEq
 Δt = 0.1
-prob = ODEProblem(rhs!, Y, (0.0, 900.0))
+prob = ODEProblem(rhs!, Y, (0.0, 3600.0))
 
 integrator = OrdinaryDiffEq.init(
     prob,
@@ -317,7 +329,7 @@ ENV["GKSwstype"] = "nul"
 using ClimaCorePlots, Plots
 Plots.GRBackend()
 
-dir = "dc_fluxform_topo"
+dir = "mountain_fluxform"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 

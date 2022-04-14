@@ -24,14 +24,15 @@ using TerminalLoggers: TerminalLogger
 global_logger(TerminalLogger())
 
 function warp_surface(coord)
+  # Parameters from GMD-9-2007-2016
   x = Geometry.component(coord,1)
   FT = eltype(x)
   λ = 5000
-  ac = 10000
-  hc = 1500
+  ac = 4000
+  hc = 250
   return hc * exp(-(x/ac)^2)*(cos(π*x/λ))^2
-  #return 1000*8*(1500)^2/((x-1000)^2 + 4*1500^2)
 end
+
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
@@ -72,7 +73,7 @@ function hvspace_2D(
 end
 
 # set up 2D domain - doubly periodic box
-hv_center_space, hv_face_space = hvspace_2D((-25600, 25600), (0, 6400))
+hv_center_space, hv_face_space = hvspace_2D((-30000, 30000), (0, 25000))
 
 const MSLP = 1e5 # mean sea level pressure
 const grav = 9.8 # gravitational constant
@@ -81,46 +82,43 @@ const γ = 1.4 # heat capacity ratio
 const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
-
+const uᵣ = 10.0
+const kinematic_viscosity = 75.0 #m²/s
+ 
 Φ(z) = grav * z
 
 # Reference: https://journals.ametsoc.org/view/journals/mwre/140/4/mwr-d-10-05073.1.xml, Section 5a
 # Prognostic thermodynamic variable: Total Energy 
-function init_dry_density_current_2d(x, z)
-    x_c = 0.0
-    z_c = 3000.0
-    r_c = 1.0
-    x_r = 4000.0
-    z_r = 2000.0
-    θ_b = 300.0
-    θ_c = -15.0
+function init_advection_over_mountain(x, z)
+    θ₀ = 280.0
     cp_d = C_p
     cv_d = C_v
-    p_0 = MSLP
+    p₀ = MSLP
     g = grav
-
-    # auxiliary quantities
-    r = sqrt((x - x_c)^2 / x_r^2 + (z - z_c)^2 / z_r^2)
-    θ_p = r < r_c ? 0.5 * θ_c * (1.0 + cospi(r / r_c)) : 0.0 # potential temperature perturbation
-
-    θ = θ_b + θ_p # potential temperature
-    π_exn = 1.0 - Φ(z) / cp_d / θ # exner function
-    T = π_exn * θ # temperature
-    p = p_0 * π_exn^(cp_d / R_d) # pressure
-    ρ = p / R_d / T # density
-    e = cv_d * (T - T_0) + Φ(z)
-    ρe = ρ * e # total energy
-
-    return (ρ = ρ, ρe = ρe)
+    
+    𝒩 = 0.01
+    π_exner = @. exp(-g * z / (cp_d * θ₀))
+    θ = @. θ₀ * exp(𝒩 ^2 * z / g)
+    T = @. π_exner * θ # temperature
+    ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d/R_d)
+    e = @. cv_d * (T - T_0) + Φ(z) + 50.0
+    ρe = @. ρ * e
+    return (ρ = ρ,
+            ρe = ρe)
 end
 
 # initial conditions
 coords = Fields.coordinate_field(hv_center_space)
 face_coords = Fields.coordinate_field(hv_face_space)
 
-Yc = map(coord -> init_dry_density_current_2d(coord.x, coord.z), coords)
-uₕ = map(_ -> Geometry.Covariant1Vector(0.0), coords)
+Yc = map(coord -> init_advection_over_mountain(coord.x, coord.z), coords)
 w = map(_ -> Geometry.Covariant3Vector(0.0), face_coords)
+uₕ_local = map(_ -> Geometry.UVector(10.0), coords)
+uₕ = map(_ -> Geometry.Covariant3Vector.(uₕ_local), coords)
+
+ᶜlg = Fields.local_geometry_field(hv_center_space)
+ᶠlg = Fields.local_geometry_field(hv_face_space)
+
 Y = Fields.FieldVector(Yc = Yc, uₕ = uₕ, w = w)
 
 energy_0 = sum(Y.Yc.ρe)
@@ -246,7 +244,7 @@ function rhs_invariant!(dY, Y, _, t)
     # Uniform 2nd order diffusion
     ∂c = Operators.GradientF2C()
     fρ = @. Ic2f(cρ)
-    κ₂ = 75.0 # m^2/s
+    κ₂ = kinematic_viscosity # m^2/s
 
     ᶠ∇ᵥuₕ = @. vgradc2f(cuₕ.components.data.:1)
     ᶜ∇ᵥw = @. ∂c(fw.components.data.:1)
