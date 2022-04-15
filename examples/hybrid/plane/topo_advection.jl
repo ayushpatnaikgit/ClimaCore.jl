@@ -29,8 +29,8 @@ function warp_surface(coord)
   # Ulrich and Guerra [2016 GMD]
   x = Geometry.component(coord,1)
   FT = eltype(x)
-  λ = 5000
-  ac = 4000
+  λ = 4000
+  ac = 5000
   hc = 250
   return hc * exp(-(x/ac)^2)*(cos(π*x/λ))^2
 end
@@ -38,8 +38,8 @@ end
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 64,
-    zelem = 32,
+    xelem = 32,
+    zelem = 100,
     npoly = 4,
     warp_fn = warp_surface,
 )
@@ -86,6 +86,7 @@ const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
 const uᵣ = 1.0
 const kinematic_viscosity = 75.0 #m²/s
+const hyperdiffusivity = 1e7 #m²/s
  
 Φ(z) = grav * z
 
@@ -121,6 +122,8 @@ w = map(_ -> Geometry.Covariant3Vector(0.0), face_coords)
 uₕ_local = map(_ -> Geometry.UWVector(10.0, 0.0), coords)
 uₕ = Geometry.Covariant1Vector.(uₕ_local)
 
+const u₀ = uₕ
+
 ᶜlg = Fields.local_geometry_field(hv_center_space)
 ᶠlg = Fields.local_geometry_field(hv_face_space)
 
@@ -128,6 +131,39 @@ Y = Fields.FieldVector(Yc = Yc, uₕ = uₕ, w = w)
 
 energy_0 = sum(Y.Yc.ρe)
 mass_0 = sum(Y.Yc.ρ)
+
+function rayleigh_sponge_z(z;
+                         z_sponge=15000.0,
+                         z_max=25000.0,
+                         α = 0.5,  # Relaxation timescale
+                         τ = 0.5,
+                         γ = 2.0)
+    if z >= z_sponge
+        r = (z - z_sponge) / (z_max - z_sponge)
+        β_sponge = α * sinpi(τ * r)^γ
+        return β_sponge
+    else
+        return eltype(z)(0)
+    end
+end
+function rayleigh_sponge_x(x;
+                         x_sponge=20000.0,
+                         x_max=30000.0,
+                         α = 0.5,  # Relaxation timescale
+                         τ = 0.5,
+                         γ = 2.0)
+    if x >= x_sponge
+        r = (x - x_sponge) / (x_max - x_sponge)
+        β_sponge = α * sinpi(τ * r)^γ
+        return β_sponge
+    elseif x <= -x_sponge
+        r = (abs(x) - x_sponge) / (x_max - x_sponge)
+        β_sponge = α * sinpi(τ * r)^γ
+        return β_sponge
+    else
+        return eltype(x)(0)
+    end
+end
 
 function rhs_invariant!(dY, Y, _, t)
 
@@ -178,7 +214,7 @@ function rhs_invariant!(dY, Y, _, t)
     Spaces.weighted_dss!(dρe)
     Spaces.weighted_dss!(duₕ)
 
-    κ₄ = 0.0 # m^4/s
+    κ₄ = hyperdiffusivity # m^4/s
     @. dρe = -κ₄ * hwdiv(cρ * hgrad(χe))
     @. duₕ = -κ₄ * (hwgrad(hdiv(χuₕ)))
 
@@ -277,6 +313,15 @@ function rhs_invariant!(dY, Y, _, t)
     @. dρe += hκ₂∇²h_tot
     @. dρe += vκ₂∇²h_tot
 
+
+    # Sponge tendency
+    β = @. rayleigh_sponge_z(coords.z)
+    βx = @. rayleigh_sponge_x(coords.x)
+    @. duₕ -= β * (uₕ - u₀)
+    @. dw -= Ic2f(β) * fw
+    @. duₕ -= βx * (uₕ - u₀)
+    @. dw -= Ic2f(βx) * fw
+
     Spaces.weighted_dss!(dY.Yc)
     Spaces.weighted_dss!(dY.uₕ)
     Spaces.weighted_dss!(dY.w)
@@ -289,7 +334,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-timeend = 3600.0
+timeend = 3600.0 * 10.0
 Δt = 0.5
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
@@ -304,7 +349,7 @@ integrator = OrdinaryDiffEq.init(
     prob,
     SSPRK33(),
     dt = Δt,
-    saveat = 10.0,
+    saveat = 1800.0,
     progress = true,
     progress_message = (dt, u, p, t) -> t,
     callback = dss_callback
@@ -320,7 +365,7 @@ ENV["GKSwstype"] = "nul"
 import Plots, ClimaCorePlots
 Plots.GRBackend()
 
-dir = "dc_invariant_etot_topo"
+dir = "schar_etot_hdiff"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
