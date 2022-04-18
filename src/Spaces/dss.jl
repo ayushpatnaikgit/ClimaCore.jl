@@ -60,7 +60,10 @@ end
     end
     Geometry.transform(ax, arg, local_geometry)
 end
-
+@inline dss_transform(
+    arg::Geometry.Covariant3Vector,
+    local_geometry::Geometry.LocalGeometry,
+) = arg
 @inline function dss_untransform(refarg, targ, local_geometry)
     RecursiveApply.rmap(refarg, targ) do rx, tx
         Base.@_inline_meta
