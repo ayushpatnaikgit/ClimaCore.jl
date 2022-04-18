@@ -29,8 +29,7 @@ function warp_surface(coord)
   λ = 5000
   ac = 10000
   hc = 1500
-  return hc * exp(-(x/ac)^2)*(cos(π*x/λ))^2
-  #return 1000*8*(1500)^2/((x-1000)^2 + 4*1500^2)
+  return 1000*8*(1500)^2/((x-1000)^2 + 4*1500^2)
 end
 function hvspace_2D(
     xlim = (-π, π),
@@ -219,9 +218,9 @@ function rhs_invariant!(dY, Y, _, t)
     # cross product
     # convert to contravariant
     # these will need to be modified with topography
-    fu¹ =
-        Geometry.Contravariant1Vector.(Geometry.Covariant13Vector.(Ic2f.(cuₕ)),)
-    fu³ = Geometry.Contravariant3Vector.(Geometry.Covariant13Vector.(fw))
+    fu = Geometry.Contravariant13Vector.(Ic2f.(cuₕ)) .+ Geometry.Contravariant13Vector.(fw)
+    fu¹ = Geometry.project.(Ref(Geometry.Contravariant1Axis()), fu)
+    fu³ = Geometry.project.(Ref(Geometry.Contravariant3Axis()), fu)
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
     @. duₕ -= If2c(fω¹ × fu³)
 

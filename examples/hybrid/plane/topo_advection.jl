@@ -50,7 +50,7 @@ function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
     xelem = 32,
-    zelem = 25,
+    zelem = 50,
     npoly = 4,
     warp_fn = warp_surface,
 )
@@ -373,18 +373,18 @@ path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
 anim = Plots.@animate for u in sol.u
-    Plots.plot(u.Yc.ρe ./ u.Yc.ρ)
+    Plots.plot(u.Yc.ρe ./ u.Yc.ρ, xlim=(-12000,12000), ylim=(0,10000))
 end
 Plots.mp4(anim, joinpath(path, "total_energy.mp4"), fps = 20)
 
 If2c = Operators.InterpolateF2C()
 anim = Plots.@animate for u in sol.u
-    Plots.plot(Geometry.WVector.(Geometry.Covariant13Vector.(If2c.(u.w))))
+  Plots.plot(Geometry.WVector.(Geometry.Covariant13Vector.(If2c.(u.w))), xlim=(-12000,12000), ylim=(0,10000))
 end
 Plots.mp4(anim, joinpath(path, "vel_w.mp4"), fps = 20)
 
 anim = Plots.@animate for u in sol.u
-    Plots.plot(Geometry.UVector.(Geometry.Covariant13Vector.(u.uₕ)))
+    Plots.plot(Geometry.UVector.(Geometry.Covariant13Vector.(u.uₕ)), xlim=(-12000,12000), ylim=(0,10000))
 end
 Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
 

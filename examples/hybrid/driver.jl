@@ -113,7 +113,8 @@ else
         h_space = make_horizontal_space(horizontal_mesh, npoly)
         comms_ctx = nothing
     end
-    center_space, face_space = make_hybrid_spaces(h_space, z_max, z_elem)
+    #center_space, face_space = make_hybrid_spaces(h_space, z_max, z_elem)
+    center_space, face_space = make_hybrid_warped_spaces(h_space, z_max, z_elem, warp)
     ᶜlocal_geometry = Fields.local_geometry_field(center_space)
     ᶠlocal_geometry = Fields.local_geometry_field(face_space)
     Y = Fields.FieldVector(
