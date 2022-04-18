@@ -23,6 +23,17 @@ using Logging: global_logger
 using TerminalLoggers: TerminalLogger
 global_logger(TerminalLogger())
 
+const MSLP = 1e5 # mean sea level pressure
+const grav = 9.8 # gravitational constant
+const R_d = 287.058 # R dry (gas constant / mol mass dry air)
+const γ = 1.4 # heat capacity ratio
+const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
+const C_v = R_d / (γ - 1) # heat capacity at constant volume
+const T_0 = 273.16 # triple point temperature
+const uᵣ = 1.0
+const kinematic_viscosity = 75.0 #m²/s
+const hyperdiffusivity = 1e7 #m²/s
+ 
 function warp_surface(coord)
   # Parameters from GMD-9-2007-2016
   # Specification for Agnesi Mountain following 
@@ -39,7 +50,7 @@ function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
     xelem = 32,
-    zelem = 100,
+    zelem = 25,
     npoly = 4,
     warp_fn = warp_surface,
 )
@@ -77,17 +88,6 @@ end
 # set up 2D domain - doubly periodic box
 hv_center_space, hv_face_space = hvspace_2D((-30000, 30000), (0, 25000))
 
-const MSLP = 1e5 # mean sea level pressure
-const grav = 9.8 # gravitational constant
-const R_d = 287.058 # R dry (gas constant / mol mass dry air)
-const γ = 1.4 # heat capacity ratio
-const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
-const C_v = R_d / (γ - 1) # heat capacity at constant volume
-const T_0 = 273.16 # triple point temperature
-const uᵣ = 1.0
-const kinematic_viscosity = 75.0 #m²/s
-const hyperdiffusivity = 1e7 #m²/s
- 
 Φ(z) = grav * z
 
 # Reference: https://journals.ametsoc.org/view/journals/mwre/140/4/mwr-d-10-05073.1.xml, Section 5a
@@ -258,17 +258,20 @@ function rhs_invariant!(dY, Y, _, t)
     # cross product
     # convert to contravariant
     # these will need to be modified with topography
-    fu¹ =
-        Geometry.Contravariant1Vector.(Geometry.Covariant13Vector.(Ic2f.(cuₕ)),)
-    fu³ = Geometry.Contravariant3Vector.(Geometry.Covariant13Vector.(fw))
+#    fu¹ =
+#        Geometry.Contravariant1Vector.(Geometry.Covariant13Vector.(Ic2f.(cuₕ)),)
+#    fu³ = Geometry.Contravariant3Vector.(Geometry.Covariant13Vector.(fw))
+    fu = Geometry.Contravariant13Vector.(Ic2f.(cuₕ)) .+ Geometry.Contravariant13Vector.(fw)
+    fu¹ = Geometry.project.(Ref(Geometry.Contravariant1Axis()), fu)
+    fu³ = Geometry.project.(Ref(Geometry.Contravariant3Axis()), fu)
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
     @. duₕ -= If2c(fω¹ × fu³)
 
 
     @. duₕ -= hgrad(cp) / cρ
     vgradc2f = Operators.GradientC2F(
-        bottom = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
-        top = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
+        bottom = Operators.SetGradient(Geometry.Contravariant3Vector(0.0)),
+        top = Operators.SetGradient(Geometry.Contravariant3Vector(0.0)),
     )
     @. dw -= vgradc2f(cp) / Ic2f(cρ)
 
@@ -334,8 +337,8 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
+Δt = 0.75
 timeend = 3600.0 * 10.0
-Δt = 0.5
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
