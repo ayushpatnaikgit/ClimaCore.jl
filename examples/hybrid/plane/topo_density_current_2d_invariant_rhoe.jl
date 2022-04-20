@@ -23,19 +23,20 @@ using Logging: global_logger
 using TerminalLoggers: TerminalLogger
 global_logger(TerminalLogger())
 
+# Warping function as prescribed in GMD-8-317-2015
 function warp_surface(coord)
   x = Geometry.component(coord,1)
   FT = eltype(x)
-  λ = 5000
-  ac = 10000
-  hc = 1500
-  return 1000*8*(1500)^2/((x-1000)^2 + 4*1500^2)
+  xm = -6000
+  am = 1000
+  H = 1000
+  return H/(1+((x-xm)/am)^2)
 end
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 64,
-    zelem = 32,
+    xelem = 128,
+    zelem = 64,
     npoly = 4,
     warp_fn = warp_surface,
 )
@@ -227,8 +228,8 @@ function rhs_invariant!(dY, Y, _, t)
 
     @. duₕ -= hgrad(cp) / cρ
     vgradc2f = Operators.GradientC2F(
-        bottom = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
-        top = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
+        bottom = Operators.SetGradient(Geometry.Contravariant3Vector(0.0)),
+        top = Operators.SetGradient(Geometry.Contravariant3Vector(0.0)),
     )
     @. dw -= vgradc2f(cp) / Ic2f(cρ)
 
@@ -286,7 +287,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 # run!
 using OrdinaryDiffEq
 timeend = 900.0
-Δt = 0.3
+Δt = 0.1
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
@@ -336,9 +337,28 @@ anim = Plots.@animate for u in sol.u
 end
 Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
 
+anim = Plots.@animate for u in sol.u
+           e = u.Yc.ρe ./ u.Yc.ρ
+           uₕ = Geometry.UWVector.(Geometry.Covariant13Vector.(u.uₕ))
+           w = Geometry.UWVector.(Geometry.Covariant13Vector.(If2c.(u.w)))
+           uw = uₕ .+ w
+           z = Fields.coordinate_field(uₕ).z
+           I = @. e - Φ(z) - (norm(uw)^2) / 2
+           T = @. I / C_v + T_0
+           p = @. u.Yc.ρ * R_d * T
+           θ = @. (MSLP/p)^(R_d/C_p)*(T)
+           Plots.plot(θ)
+end
+Plots.mp4(anim, joinpath(path, "theta.mp4"), fps = 20)
+
 # post-processing
 Es = [sum(u.Yc.ρe) for u in sol.u]
 Mass = [sum(u.Yc.ρ) for u in sol.u]
+
+@show maximum(parent(Geometry.UVector.(sol[end].uₕ)))
+@show minimum(parent(Geometry.UVector.(sol[end].uₕ)))
+@show maximum(parent(Geometry.WVector.(sol[end].w)))
+@show minimum(parent(Geometry.WVector.(sol[end].w)))
 
 Plots.png(
     Plots.plot((Es .- energy_0) ./ energy_0),

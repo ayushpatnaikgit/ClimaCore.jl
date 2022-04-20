@@ -30,9 +30,9 @@ const γ = 1.4 # heat capacity ratio
 const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
-const uᵣ = 1.0
-const kinematic_viscosity = 75.0 #m²/s
-const hyperdiffusivity = 1e7 #m²/s
+const uᵣ = 10.0
+const kinematic_viscosity = 0.0 #m²/s
+const hyperdiffusivity = 1e5 #m²/s
  
 function warp_surface(coord)
   # Parameters from GMD-9-2007-2016
@@ -49,7 +49,7 @@ end
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 32,
+    xelem = 30,
     zelem = 50,
     npoly = 4,
     warp_fn = warp_surface,
@@ -119,9 +119,8 @@ face_coords = Fields.coordinate_field(hv_face_space)
 # Retain uₕ and w as separate components of velocity vector (primitive variables)
 Yc = map(coord -> init_advection_over_mountain(coord.x, coord.z), coords)
 w = map(_ -> Geometry.Covariant3Vector(0.0), face_coords)
-uₕ_local = map(_ -> Geometry.UWVector(10.0, 0.0), coords)
+uₕ_local = map(_ -> Geometry.UWVector(uᵣ, 0.0), coords)
 uₕ = Geometry.Covariant1Vector.(uₕ_local)
-
 const u₀ = uₕ
 
 ᶜlg = Fields.local_geometry_field(hv_center_space)
@@ -246,7 +245,7 @@ function rhs_invariant!(dY, Y, _, t)
 
     # curl term
     hcurl = Operators.Curl()
-    # effectively a homogeneous Dirichlet condition on u₁ at the boundary
+    # effectively a homogeneous Neumann boundary condition on u₁ at the boundary
     vcurlc2f = Operators.CurlC2F(
         bottom = Operators.SetCurl(Geometry.Contravariant2Vector(0.0)),
         top = Operators.SetCurl(Geometry.Contravariant2Vector(0.0)),
@@ -337,7 +336,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.75
+Δt = 0.50
 timeend = 3600.0 * 10.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
@@ -368,7 +367,7 @@ ENV["GKSwstype"] = "nul"
 import Plots, ClimaCorePlots
 Plots.GRBackend()
 
-dir = "schar_etot_hdiff"
+dir = "nonzero_flow_agnesi1e4"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
