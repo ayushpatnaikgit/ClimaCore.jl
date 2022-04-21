@@ -219,7 +219,7 @@ function rhs_invariant!(dY, Y, _, t)
     # cross product
     # convert to contravariant
     # these will need to be modified with topography
-    fu = Geometry.Contravariant13Vector.(Ic2f.(cuₕ)) .+ Geometry.Contravariant13Vector.(fw)
+    fu = Geometry.Covariant13Vector.(Ic2f.(cuₕ)) .+ Geometry.Covariant13Vector.(fw)
     fu¹ = Geometry.project.(Ref(Geometry.Contravariant1Axis()), fu)
     fu³ = Geometry.project.(Ref(Geometry.Contravariant3Axis()), fu)
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
@@ -338,16 +338,16 @@ end
 Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
 
 anim = Plots.@animate for u in sol.u
-           e = u.Yc.ρe ./ u.Yc.ρ
-           uₕ = Geometry.UWVector.(Geometry.Covariant13Vector.(u.uₕ))
-           w = Geometry.UWVector.(Geometry.Covariant13Vector.(If2c.(u.w)))
-           uw = uₕ .+ w
-           z = Fields.coordinate_field(uₕ).z
-           I = @. e - Φ(z) - (norm(uw)^2) / 2
-           T = @. I / C_v + T_0
-           p = @. u.Yc.ρ * R_d * T
-           θ = @. (MSLP/p)^(R_d/C_p)*(T)
-           Plots.plot(θ)
+    e = u.Yc.ρe ./ u.Yc.ρ
+    uₕ = Geometry.UWVector.(Geometry.Covariant13Vector.(u.uₕ))
+    w = Geometry.UWVector.(Geometry.Covariant13Vector.(If2c.(u.w)))
+    uw = uₕ .+ w
+    z = Fields.coordinate_field(uₕ).z
+    I = @. e - Φ(z) - (norm(uw)^2) / 2
+    T = @. I / C_v + T_0
+    p = @. u.Yc.ρ * R_d * T
+    θ = @. (MSLP/p)^(R_d/C_p)*(T)
+    Plots.plot(θ)
 end
 Plots.mp4(anim, joinpath(path, "theta.mp4"), fps = 20)
 

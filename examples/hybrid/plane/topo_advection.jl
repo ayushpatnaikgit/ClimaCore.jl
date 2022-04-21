@@ -32,7 +32,7 @@ const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
 const uᵣ = 10.0
 const kinematic_viscosity = 0.0 #m²/s
-const hyperdiffusivity = 1e5 #m²/s
+const hyperdiffusivity = 1e8 #m²/s
  
 function warp_surface(coord)
   # Parameters from GMD-9-2007-2016
@@ -42,14 +42,14 @@ function warp_surface(coord)
   FT = eltype(x)
   λ = 4000
   ac = 5000
-  hc = 250
+  hc = 1000
   return hc * exp(-(x/ac)^2)*(cos(π*x/λ))^2
 end
 
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 30,
+    xelem = 60,
     zelem = 50,
     npoly = 4,
     warp_fn = warp_surface,
@@ -260,7 +260,7 @@ function rhs_invariant!(dY, Y, _, t)
 #    fu¹ =
 #        Geometry.Contravariant1Vector.(Geometry.Covariant13Vector.(Ic2f.(cuₕ)),)
 #    fu³ = Geometry.Contravariant3Vector.(Geometry.Covariant13Vector.(fw))
-    fu = Geometry.Contravariant13Vector.(Ic2f.(cuₕ)) .+ Geometry.Contravariant13Vector.(fw)
+    fu = Geometry.Covariant13Vector.(Ic2f.(cuₕ)) .+ Geometry.Covariant13Vector.(fw)
     fu¹ = Geometry.project.(Ref(Geometry.Contravariant1Axis()), fu)
     fu³ = Geometry.project.(Ref(Geometry.Contravariant3Axis()), fu)
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
@@ -336,7 +336,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.50
+Δt = 0.1
 timeend = 3600.0 * 10.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
@@ -367,7 +367,7 @@ ENV["GKSwstype"] = "nul"
 import Plots, ClimaCorePlots
 Plots.GRBackend()
 
-dir = "nonzero_flow_agnesi1e4"
+dir = "nonzero_flow_agnesi1e6"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
