@@ -10,7 +10,7 @@ import ..Utilities: PlusHalf
 
 using ..RecursiveApply
 
-import LinearAlgebra, Statistics
+import LinearAlgebra, Statistics, InteractiveUtils
 
 """
     Field(values, space)
@@ -32,6 +32,9 @@ Field(values::V, space::S) where {V <: AbstractData, S <: AbstractSpace} =
 Field(::Type{T}, space::S) where {T, S <: AbstractSpace} =
     Field(similar(Spaces.coordinates_data(space), T), space)
 
+# Point Field
+const PointField{V, S} =
+    Field{V, S} where {V <: AbstractData, S <: Spaces.PointSpace}
 
 # Spectral Element Field
 const SpectralElementField2D{V, S} =
@@ -277,21 +280,17 @@ function Spaces.variational_solve!(field::Field)
     return field
 end
 
-function Spaces.horizontal_dss!(field::Field)
-    Spaces.horizontal_dss!(field_values(field), axes(field))
-    return field
-end
-
 """
-    Spaces.weighted_dss!(f::Field)
+    Spaces.weighted_dss!(f::Field[, ghost_buffer = Spaces.create_ghost_buffer(field)])
 
 Apply weighted direct stiffness summation (DSS) to `f`. This operates in-place
-(i.e. it modifies the `f`).
+(i.e. it modifies the `f`). `ghost_buffer` contains the necessary information
+for communication in a distributed setting, see [`Spaces.create_ghost_buffer`](@ref).
 
 This is a projection operation from the piecewise polynomial space
 ``\\mathcal{V}_0`` to the continuous space ``\\mathcal{V}_1 = \\mathcal{V}_0
-\\cap \\mathcal{C}_0``, defined as the field ``\\theta \\in \\mathcal{V}_1`` such
-that for all ``\\phi \\in \\mathcal{V}_1``
+\\cap \\mathcal{C}_0``, defined as the field ``\\theta \\in \\mathcal{V}_1``
+such that for all ``\\phi \\in \\mathcal{V}_1``
 ```math
 \\int_\\Omega \\phi \\theta \\,d\\Omega = \\int_\\Omega \\phi f \\,d\\Omega
 ```
@@ -311,13 +310,25 @@ which reduces to
 \\theta = Q \\bar\\theta = Q (Q^\\top W J Q)^{-1} Q^\\top W J f
 ```
 """
-function Spaces.weighted_dss!(field::Field)
-    Spaces.weighted_dss!(field_values(field), axes(field))
+function Spaces.weighted_dss!(
+    field::Field,
+    ghost_buffer = Spaces.create_ghost_buffer(field),
+)
+    Spaces.weighted_dss!(field_values(field), axes(field), ghost_buffer)
     return field
 end
-function Spaces.weighted_dss!(field::Field, comms_ctx)
-    Spaces.weighted_dss!(field_values(field), axes(field), comms_ctx)
-    return field
+
+"""
+    Spaces.create_ghost_buffer(field::Field)
+
+Create a buffer for communicating neighbour information of `field`.
+"""
+function Spaces.create_ghost_buffer(field::Field)
+    space = axes(field)
+    hspace =
+        space isa Spaces.ExtrudedFiniteDifferenceSpace ?
+        space.horizontal_space : space
+    Spaces.create_ghost_buffer(field_values(field), hspace.topology)
 end
 
 
@@ -331,5 +342,23 @@ function level(field::FaceExtrudedFiniteDifferenceField, v::PlusHalf)
     data = level(field_values(field), v.i + 1)
     Field(data, hspace)
 end
+
+"""
+    set!(f::Function, field::Field, args = ())
+
+Apply function `f` to populate
+values in field `field`. `f` must
+have a function signature with signature
+`f(::LocalGeometry[, args...])`.
+Additional arguments may be passed to
+`f` with `args`.
+"""
+function set!(f::Function, field::Field, args = ())
+    space = axes(field)
+    local_geometry = local_geometry_field(space)
+    field .= f.(local_geometry, args...)
+    return nothing
+end
+
 
 end # module

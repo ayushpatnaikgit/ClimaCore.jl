@@ -42,26 +42,13 @@ function make_horizontal_space(mesh, npoly)
     return space
 end
 
-function make_distributed_horizontal_space(
-    mesh,
-    npoly,
-    Context,
-    nlevels,
-    max_field_element_size,
-)
+function make_distributed_horizontal_space(mesh, npoly, comms_ctx)
     quad = Spaces.Quadratures.GLL{npoly + 1}()
     if mesh isa Meshes.AbstractMesh1D
         error("Distributed mode does not work with 1D horizontal spaces.")
     elseif mesh isa Meshes.AbstractMesh2D
-        topology = Topologies.DistributedTopology2D(mesh, Context)
-        comms_ctx = Spaces.setup_comms(
-            Context,
-            topology,
-            quad,
-            nlevels,
-            max_field_element_size,
-        )
-        space = Spaces.SpectralElementSpace2D(topology, quad, comms_ctx)
+        topology = Topologies.DistributedTopology2D(comms_ctx, mesh)
+        space = Spaces.SpectralElementSpace2D(topology, quad)
     end
     return space, comms_ctx
 end
@@ -91,12 +78,11 @@ function make_hybrid_warped_spaces(h_space, z_max, z_elem, warp)
     z_space = Spaces.FaceFiniteDifferenceSpace(z_topology)
     z_surface = warp.(Fields.coordinate_field(h_space))
     face_space = Spaces.ExtrudedFiniteDifferenceSpace(
-                    h_space,
-                    z_space,
-                    Hypsography.LinearAdaption(), 
-                    z_surface
-              )
-    center_space =
-        Spaces.CenterExtrudedFiniteDifferenceSpace(face_space)
+        h_space,
+        z_space,
+        Hypsography.LinearAdaption(),
+        z_surface,
+    )
+    center_space = Spaces.CenterExtrudedFiniteDifferenceSpace(face_space)
     return center_space, face_space
 end

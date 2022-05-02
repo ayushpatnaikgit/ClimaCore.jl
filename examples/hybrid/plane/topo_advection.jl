@@ -33,17 +33,17 @@ const T_0 = 273.16 # triple point temperature
 const uᵣ = 10.0
 const kinematic_viscosity = 0.0 #m²/s
 const hyperdiffusivity = 1e8 #m²/s
- 
+
 function warp_surface(coord)
-  # Parameters from GMD-9-2007-2016
-  # Specification for Agnesi Mountain following 
-  # Ulrich and Guerra [2016 GMD]
-  x = Geometry.component(coord,1)
-  FT = eltype(x)
-  λ = 4000
-  ac = 5000
-  hc = 1000
-  return hc * exp(-(x/ac)^2)*(cos(π*x/λ))^2
+    # Parameters from GMD-9-2007-2016
+    # Specification for Agnesi Mountain following 
+    # Ulrich and Guerra [2016 GMD]
+    x = Geometry.component(coord, 1)
+    FT = eltype(x)
+    λ = 4000
+    ac = 5000
+    hc = 1000
+    return hc * exp(-(x / ac)^2) * (cos(π * x / λ))^2
 end
 
 function hvspace_2D(
@@ -72,16 +72,15 @@ function hvspace_2D(
     horztopology = Topologies.IntervalTopology(horzmesh)
     quad = Spaces.Quadratures.GLL{npoly + 1}()
     horzspace = Spaces.SpectralElementSpace1D(horztopology, quad)
-  
+
     z_surface = warp_fn.(Fields.coordinate_field(horzspace))
     hv_face_space = Spaces.ExtrudedFiniteDifferenceSpace(
-                    horzspace,
-                    vert_face_space,
-                    Hypsography.LinearAdaption(), 
-                    z_surface
-              )
-    hv_center_space =
-        Spaces.CenterExtrudedFiniteDifferenceSpace(hv_face_space)
+        horzspace,
+        vert_face_space,
+        Hypsography.LinearAdaption(),
+        z_surface,
+    )
+    hv_center_space = Spaces.CenterExtrudedFiniteDifferenceSpace(hv_face_space)
     return (hv_center_space, hv_face_space)
 end
 
@@ -98,16 +97,15 @@ function init_advection_over_mountain(x, z)
     cv_d = C_v
     p₀ = MSLP
     g = grav
-    
+
     𝒩 = 0.01
     π_exner = @. exp(-g * z / (cp_d * θ₀))
-    θ = @. θ₀ * exp(𝒩 ^2 * z / g)
+    θ = @. θ₀ * exp(𝒩^2 * z / g)
     T = @. π_exner * θ # temperature
-    ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d/R_d)
+    ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d / R_d)
     e = @. cv_d * (T - T_0) + Φ(z) + 50.0
     ρe = @. ρ * e
-    return (ρ = ρ,
-            ρe = ρe)
+    return (ρ = ρ, ρe = ρe)
 end
 
 # initial conditions
@@ -131,12 +129,14 @@ Y = Fields.FieldVector(Yc = Yc, uₕ = uₕ, w = w)
 energy_0 = sum(Y.Yc.ρe)
 mass_0 = sum(Y.Yc.ρ)
 
-function rayleigh_sponge_z(z;
-                         z_sponge=15000.0,
-                         z_max=25000.0,
-                         α = 0.5,  # Relaxation timescale
-                         τ = 0.5,
-                         γ = 2.0)
+function rayleigh_sponge_z(
+    z;
+    z_sponge = 15000.0,
+    z_max = 25000.0,
+    α = 0.5,  # Relaxation timescale
+    τ = 0.5,
+    γ = 2.0,
+)
     if z >= z_sponge
         r = (z - z_sponge) / (z_max - z_sponge)
         β_sponge = α * sinpi(τ * r)^γ
@@ -145,12 +145,14 @@ function rayleigh_sponge_z(z;
         return eltype(z)(0)
     end
 end
-function rayleigh_sponge_x(x;
-                         x_sponge=20000.0,
-                         x_max=30000.0,
-                         α = 0.5,  # Relaxation timescale
-                         τ = 0.5,
-                         γ = 2.0)
+function rayleigh_sponge_x(
+    x;
+    x_sponge = 20000.0,
+    x_max = 30000.0,
+    α = 0.5,  # Relaxation timescale
+    τ = 0.5,
+    γ = 2.0,
+)
     if x >= x_sponge
         r = (x - x_sponge) / (x_max - x_sponge)
         β_sponge = α * sinpi(τ * r)^γ
@@ -257,10 +259,12 @@ function rhs_invariant!(dY, Y, _, t)
     # cross product
     # convert to contravariant
     # these will need to be modified with topography
-#    fu¹ =
-#        Geometry.Contravariant1Vector.(Geometry.Covariant13Vector.(Ic2f.(cuₕ)),)
-#    fu³ = Geometry.Contravariant3Vector.(Geometry.Covariant13Vector.(fw))
-    fu = Geometry.Covariant13Vector.(Ic2f.(cuₕ)) .+ Geometry.Covariant13Vector.(fw)
+    #    fu¹ =
+    #        Geometry.Contravariant1Vector.(Geometry.Covariant13Vector.(Ic2f.(cuₕ)),)
+    #    fu³ = Geometry.Contravariant3Vector.(Geometry.Covariant13Vector.(fw))
+    fu =
+        Geometry.Covariant13Vector.(Ic2f.(cuₕ)) .+
+        Geometry.Covariant13Vector.(fw)
     fu¹ = Geometry.project.(Ref(Geometry.Contravariant1Axis()), fu)
     fu³ = Geometry.project.(Ref(Geometry.Contravariant3Axis()), fu)
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
@@ -339,13 +343,13 @@ using OrdinaryDiffEq
 Δt = 0.1
 timeend = 3600.0 * 10.0
 function make_dss_func()
-  _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
-  _dss!(::Any)=nothing
-  dss_func(Y,t,integrator) = foreach(_dss!,Fields._values(Y))
-  return dss_func
+    _dss!(x::Fields.Field) = Spaces.weighted_dss!(x)
+    _dss!(::Any) = nothing
+    dss_func(Y, t, integrator) = foreach(_dss!, Fields._values(Y))
+    return dss_func
 end
 dss_func = make_dss_func()
-dss_callback = FunctionCallingCallback(dss_func, func_start=true)
+dss_callback = FunctionCallingCallback(dss_func, func_start = true)
 prob = ODEProblem(rhs_invariant!, Y, (0.0, timeend))
 integrator = OrdinaryDiffEq.init(
     prob,
@@ -354,7 +358,7 @@ integrator = OrdinaryDiffEq.init(
     saveat = 1800.0,
     progress = true,
     progress_message = (dt, u, p, t) -> t,
-    callback = dss_callback
+    callback = dss_callback,
 );
 
 if haskey(ENV, "CI_PERF_SKIP_RUN") # for performance analysis
@@ -372,18 +376,26 @@ path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
 anim = Plots.@animate for u in sol.u
-    Plots.plot(u.Yc.ρe ./ u.Yc.ρ, xlim=(-12000,12000), ylim=(0,10000))
+    Plots.plot(u.Yc.ρe ./ u.Yc.ρ, xlim = (-12000, 12000), ylim = (0, 10000))
 end
 Plots.mp4(anim, joinpath(path, "total_energy.mp4"), fps = 20)
 
 If2c = Operators.InterpolateF2C()
 anim = Plots.@animate for u in sol.u
-  Plots.plot(Geometry.WVector.(Geometry.Covariant13Vector.(If2c.(u.w))), xlim=(-12000,12000), ylim=(0,10000))
+    Plots.plot(
+        Geometry.WVector.(Geometry.Covariant13Vector.(If2c.(u.w))),
+        xlim = (-12000, 12000),
+        ylim = (0, 10000),
+    )
 end
 Plots.mp4(anim, joinpath(path, "vel_w.mp4"), fps = 20)
 
 anim = Plots.@animate for u in sol.u
-    Plots.plot(Geometry.UVector.(Geometry.Covariant13Vector.(u.uₕ)), xlim=(-12000,12000), ylim=(0,10000))
+    Plots.plot(
+        Geometry.UVector.(Geometry.Covariant13Vector.(u.uₕ)),
+        xlim = (-12000, 12000),
+        ylim = (0, 10000),
+    )
 end
 Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
 

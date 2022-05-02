@@ -32,14 +32,14 @@ function reconstruct_metric(
 ) where {T}
     v∂x∂ξ = Geometry.components(∂x∂ξ)
     v∇z = Geometry.components(∇z)
-#    if v∇z[1] <= 1e-10
-#      v∇z[1] = eltype(Δz)(0)
-#    end
+    #    if v∇z[1] <= 1e-10
+    #      v∇z[1] = eltype(Δz)(0)
+    #    end
     Geometry.AxisTensor(axes(∂x∂ξ), @SMatrix [
         v∂x∂ξ[1, 1] 0
         v∇z[1] Δz
     ])
-  return ∂x∂ξ
+    return ∂x∂ξ
 end
 function reconstruct_metric(
     ∂x∂ξ::Geometry.Axis2Tensor{
