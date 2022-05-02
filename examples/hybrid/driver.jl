@@ -54,7 +54,8 @@ using OrdinaryDiffEq
 using DiffEqCallbacks
 using JLD2
 
-const FT = get(ENV, "FLOAT_TYPE", "Float32") == "Float32" ? Float32 : Float64
+#const FT = get(ENV, "FLOAT_TYPE", "Float32") == "Float32" ? Float32 : Float64
+const FT = Float64
 
 include("../implicit_solver_debugging_tools.jl")
 include("../ordinary_diff_eq_bug_fixes.jl")
@@ -63,7 +64,7 @@ include("../common_spaces.jl")
 if haskey(ENV, "TEST_NAME")
     test_dir, test_file_name = split(ENV["TEST_NAME"], '/')
 else
-    error("ENV[\"TEST_NAME\"] required (e.g., \"sphere/baroclinic_wave_rhoe\")")
+    error("ENV[\"TEST_NAME\"] required (e.g., \"sphere/baroclinic_wave_rhoe_topography\")")
 end
 include(joinpath(test_dir, "$test_file_name.jl"))
 

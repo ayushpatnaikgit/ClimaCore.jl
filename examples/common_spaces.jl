@@ -97,6 +97,6 @@ function make_hybrid_warped_spaces(h_space, z_max, z_elem, warp)
                     z_surface
               )
     center_space =
-        Spaces.CenterExtrudedFiniteDifferenceSpace(hv_face_space)
+        Spaces.CenterExtrudedFiniteDifferenceSpace(face_space)
     return center_space, face_space
 end
