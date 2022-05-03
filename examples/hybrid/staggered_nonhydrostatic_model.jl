@@ -39,8 +39,8 @@ const ᶜdivᵥ = Operators.DivergenceF2C(
     bottom = Operators.SetValue(Geometry.Contravariant3Vector(FT(0))),
 )
 const ᶠgradᵥ = Operators.GradientC2F(
-    bottom = Operators.SetGradient(Geometry.Covariant3Vector(FT(0))),
-    top = Operators.SetGradient(Geometry.Covariant3Vector(FT(0))),
+    bottom = Operators.SetGradient(Geometry.Contravariant3Vector(FT(0))),
+    top = Operators.SetGradient(Geometry.Contravariant3Vector(FT(0))),
 )
 const ᶠcurlᵥ = Operators.CurlC2F(
     bottom = Operators.SetCurl(Geometry.Contravariant12Vector(FT(0), FT(0))),
@@ -62,12 +62,12 @@ pressure_ρθ(ρθ) = p_0 * (ρθ * R_d / p_0)^γ
 pressure_ρe(ρe, K, Φ, ρ) = ρ * R_d * ((ρe / ρ - K - Φ) / cv_d + T_tri)
 pressure_ρe_int(ρe_int, ρ) = R_d * (ρe_int / cv_d + ρ * T_tri)
 
-get_cache(ᶜlocal_geometry, ᶠlocal_geometry, comms_ctx, dt) = merge(
-    default_cache(ᶜlocal_geometry, ᶠlocal_geometry, comms_ctx),
+get_cache(ᶜlocal_geometry, ᶠlocal_geometry, Y, dt) = merge(
+    default_cache(ᶜlocal_geometry, ᶠlocal_geometry, Y),
     additional_cache(ᶜlocal_geometry, ᶠlocal_geometry, dt),
 )
 
-function default_cache(ᶜlocal_geometry, ᶠlocal_geometry, comms_ctx)
+function default_cache(ᶜlocal_geometry, ᶠlocal_geometry, Y)
     ᶜcoord = ᶜlocal_geometry.coordinates
     if eltype(ᶜcoord) <: Geometry.LatLongZPoint
         ᶜf = @. 2 * Ω * sind(ᶜcoord.lat)
@@ -89,7 +89,13 @@ function default_cache(ᶜlocal_geometry, ᶠlocal_geometry, comms_ctx)
             ᶜlocal_geometry,
             Operators.StencilCoefs{-half, half, NTuple{2, FT}},
         ),
-        comms_ctx,
+        ghost_buffer = (
+            c = Spaces.create_ghost_buffer(Y.c),
+            f = Spaces.create_ghost_buffer(Y.f),
+            χ = Spaces.create_ghost_buffer(Y.c.ρ), # for hyperdiffusion
+            χw = Spaces.create_ghost_buffer(Y.f.w.components.data.:1), # for hyperdiffusion
+            χuₕ = Spaces.create_ghost_buffer(Y.c.uₕ), # for hyperdiffusion
+        ),
     )
 end
 
@@ -153,8 +159,8 @@ function remaining_tendency!(Yₜ, Y, p, t)
     Yₜ .= zero(eltype(Yₜ))
     default_remaining_tendency!(Yₜ, Y, p, t)
     additional_tendency!(Yₜ, Y, p, t)
-    Spaces.weighted_dss!(Yₜ.c, p.comms_ctx)
-    Spaces.weighted_dss!(Yₜ.f, p.comms_ctx)
+    Spaces.weighted_dss!(Yₜ.c, p.ghost_buffer.c)
+    Spaces.weighted_dss!(Yₜ.f, p.ghost_buffer.f)
     return Yₜ
 end
 
@@ -216,8 +222,14 @@ function default_remaining_tendency!(Yₜ, Y, p, t)
     @. ᶠω¹² += ᶠcurlᵥ(ᶜuₕ)
 
     # TODO: Modify to account for topography
-    @. ᶠu¹² = Geometry.Contravariant12Vector(ᶠinterp(ᶜuₕ))
-    @. ᶠu³ = Geometry.Contravariant3Vector(ᶠw)
+    ᶠu =
+        Geometry.Covariant123Vector.(ᶠinterp.(ᶜuₕ)) .+
+        Geometry.Covariant123Vector.(ᶠw)
+    #@. ᶠu¹² = Geometry.Contravariant12Vector(ᶠu) 
+    #@. ᶠu³ = Geometry.Contravariant3Vector(ᶠw) 
+    ᶠᶜu = @. Geometry.Contravariant123Vector(ᶠu)
+    ᶠu¹² = @. Geometry.Contravariant12Vector(ᶠᶜu.components.data.:1, ᶠᶜu.components.data.:2)
+    ᶠu³ = @. Geometry.Contravariant3Vector(ᶠᶜu.components.data.:3)
 
     @. Yₜ.c.uₕ -=
         ᶜinterp(ᶠω¹² × ᶠu³) + (ᶜf + ᶜω³) × Geometry.Contravariant12Vector(ᶜuₕ)

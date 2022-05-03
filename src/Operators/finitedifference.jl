@@ -132,7 +132,6 @@ interior_indices2 = 2:n-1
 
 import ..Utilities: PlusHalf, half
 
-
 left_idx(::Spaces.CenterFiniteDifferenceSpace) = 1
 right_idx(space::Spaces.CenterFiniteDifferenceSpace) =
     length(space.center_local_geometry)
@@ -174,6 +173,17 @@ Base.@propagate_inbounds function Geometry.LocalGeometry(
     space.face_local_geometry[i]
 end
 
+
+"""
+    BoundaryCondition
+
+An abstract type for boundary conditions for [`FiniteDifferenceOperator`](@ref)s.
+
+Subtypes should define:
+- [`boundary_width`](@ref)
+- [`stencil_left_boundary`](@ref)
+- [`stencil_right_boundary`](@ref)
+"""
 abstract type BoundaryCondition end
 
 """
@@ -213,12 +223,27 @@ Set the curl at the boundary to be `val`.
 struct SetCurl{S <: Geometry.ContravariantVector} <: BoundaryCondition
     val::S
 end
+
 """
     Extrapolate()
 
 Set the value at the boundary to be the same as the closest interior point.
 """
 struct Extrapolate <: BoundaryCondition end
+
+"""
+    FirstOrderOneSided()
+
+Use a first-order up/down-wind scheme to compute the value at the boundary.
+"""
+struct FirstOrderOneSided <: BoundaryCondition end
+
+"""
+    ThirdOrderOneSided()
+
+Use a third-order up/down-wind scheme to compute the value at the boundary.
+"""
+struct ThirdOrderOneSided <: BoundaryCondition end
 
 abstract type Location end
 abstract type Boundary <: Location end
@@ -228,6 +253,18 @@ struct Interior <: Location end
 struct LeftBoundaryWindow{name} <: BoundaryWindow end
 struct RightBoundaryWindow{name} <: BoundaryWindow end
 
+"""
+    FiniteDifferenceOperator
+
+An abstract type for finite difference operators. Instances of this should define:
+
+- [`return_eltype`](@ref)
+- [`return_space`](@ref)
+- [`stencil_interior_width`](@ref)
+- [`stencil_interior`](@ref)
+
+See also [`BoundaryCondition`](@ref) for how to define the boundaries.
+"""
 abstract type FiniteDifferenceOperator end
 
 return_eltype(::FiniteDifferenceOperator, arg) = eltype(arg)
@@ -270,13 +307,66 @@ struct CompositeStencilStyle <: AbstractStencilStyle end
 
 
 """
-    stencil_interior_width(op, args...)
+    return_eltype(::Op, fields...)
 
-The width of the interior stencil for the operator with the given arguments.
-Returns a tuple of 2-tuples: each 2-tuple should be the lower and upper bounds
-of the index offsets of the stencil for each argument in the stencil.
+Defines the element type of the result of operator `Op`
+"""
+function return_eltype end
+
+"""
+    return_space(::Op, spaces...)
+
+Defines the space the operator `Op` returns values on.
+"""
+function return_space end
+
+"""
+    stencil_interior_width(::Op, args...)
+
+Defines the width of the interior stencil for the operator `Op` with the given
+arguments. Returns a tuple of 2-tuples: each 2-tuple should be the lower and
+upper bounds of the index offsets of the stencil for each argument in the
+stencil.
+
+## Example
+```
+stencil(::Op, arg1, arg2) = ((-half, 1+half), (0,0))
+```
+implies that at index `i`, the stencil accesses `arg1` at `i-half`, `i+half` and
+`i+1+half`, and `arg2` at index `i`.
 """
 function stencil_interior_width end
+
+"""
+    stencil_interior(::Op, loc, idx, args...)
+
+Defines the stencil of the operator `Op` in the interior of the domain at `idx`;
+`args` are the input arguments.
+"""
+function stencil_interior end
+
+
+"""
+    boundary_width(::Op, ::BC, args...)
+
+Defines the width of a boundary condition `BC` on an operator `Op`. This is the
+number of locations that are used in a modified stencil.
+"""
+function boundary_width end
+
+"""
+    stencil_left_boundary(::Op, ::BC, loc, idx, args...)
+
+Defines the stencil of operator `Op` at `idx` near the left boundary, with boundary condition `BC`.
+"""
+function stencil_left_boundary end
+
+"""
+    stencil_right_boundary(::Op, ::BC, loc, idx, args...)
+
+Defines the stencil of operator `Op` at `idx` near the right boundary, with boundary condition `BC`.
+"""
+function stencil_right_boundary end
 
 
 abstract type InterpolationOperator <: FiniteDifferenceOperator end
@@ -472,6 +562,102 @@ function stencil_left_boundary(::LeftBiasedF2C, bc::SetValue, loc, idx, arg)
 end
 
 """
+    L = LeftBiased3rdOrderC2F(;boundaries)
+    L.(x)
+
+Interpolate a center-value field to a face-valued field from the left, using a 3rd-order reconstruction.
+```math
+L(x)[i] =  \\left(-2 x[i-\\tfrac{3}{2}] + 10 x[i-\\tfrac{1}{2}] + 4 x[i+\\tfrac{1}{2}] \\right) / 12
+```
+
+Only the left boundary condition should be set. Currently supported is:
+- [`SetValue(x₀)`](@ref): set the value to be `x₀` on the boundary.
+```math
+L(x)[\\tfrac{1}{2}] = x_0
+```
+"""
+struct LeftBiased3rdOrderC2F{BCS} <: InterpolationOperator
+    bcs::BCS
+end
+LeftBiased3rdOrderC2F(; kwargs...) = LeftBiased3rdOrderC2F(NamedTuple(kwargs))
+
+return_space(
+    ::LeftBiased3rdOrderC2F,
+    space::Spaces.CenterFiniteDifferenceSpace,
+) = Spaces.FaceFiniteDifferenceSpace(space)
+return_space(
+    ::LeftBiased3rdOrderC2F,
+    space::Spaces.CenterExtrudedFiniteDifferenceSpace,
+) = Spaces.FaceExtrudedFiniteDifferenceSpace(space)
+
+stencil_interior_width(::LeftBiased3rdOrderC2F, arg) = ((-half - 1, half + 1),)
+stencil_interior(::LeftBiased3rdOrderC2F, loc, idx, arg) =
+    (
+        -2 * getidx(arg, loc, idx - 1 - half) +
+        10 * getidx(arg, loc, idx - half) +
+        4 * getidx(arg, loc, idx + half)
+    ) / 12
+
+boundary_width(::LeftBiased3rdOrderC2F, ::SetValue, arg) = 1
+function stencil_left_boundary(
+    ::LeftBiased3rdOrderC2F,
+    bc::SetValue,
+    loc,
+    idx,
+    arg,
+)
+    @assert idx == left_face_boundary_idx(arg)
+    bc.val
+end
+
+"""
+    L = LeftBiased3rdOrderF2C(;boundaries)
+    L.(x)
+
+Interpolate a face-value field to a center-valued field from the left, using a 3rd-order reconstruction.
+```math
+L(x)[i+\\tfrac{1}{2}] =  \\left(-2 x[i-1] + 10 x[i] + 4 x[i+1] \\right) / 12
+```
+
+Only the left boundary condition should be set. Currently supported is:
+- [`SetValue(x₀)`](@ref): set the value to be `x₀` on the boundary.
+```math
+L(x)[1] = x_0
+```
+"""
+struct LeftBiased3rdOrderF2C{BCS} <: InterpolationOperator
+    bcs::BCS
+end
+LeftBiased3rdOrderF2C(; kwargs...) = LeftBiased3rdOrderF2C(NamedTuple(kwargs))
+
+return_space(::LeftBiased3rdOrderF2C, space::Spaces.FaceFiniteDifferenceSpace) =
+    Spaces.CenterFiniteDifferenceSpace(space)
+return_space(
+    ::LeftBiased3rdOrderF2C,
+    space::Spaces.FaceExtrudedFiniteDifferenceSpace,
+) = Spaces.CenterExtrudedFiniteDifferenceSpace(space)
+
+stencil_interior_width(::LeftBiased3rdOrderF2C, arg) = ((-half - 1, half + 1),)
+stencil_interior(::LeftBiased3rdOrderF2C, loc, idx, arg) =
+    (
+        -2 * getidx(arg, loc, idx - 1 - half) +
+        10 * getidx(arg, loc, idx - half) +
+        4 * getidx(arg, loc, idx + half)
+    ) / 12
+
+boundary_width(::LeftBiased3rdOrderF2C, ::SetValue, arg) = 1
+function stencil_left_boundary(
+    ::LeftBiased3rdOrderF2C,
+    bc::SetValue,
+    loc,
+    idx,
+    arg,
+)
+    @assert idx == left_center_boundary_idx(arg)
+    bc.val
+end
+
+"""
     R = RightBiasedC2F(;boundaries)
     R.(x)
 
@@ -543,6 +729,102 @@ function stencil_right_boundary(::RightBiasedF2C, bc::SetValue, loc, idx, arg)
     bc.val
 end
 
+
+"""
+    R = RightBiased3rdOrderC2F(;boundaries)
+    R.(x)
+
+Interpolate a center-valued field to a face-valued field from the right, using a 3rd-order reconstruction.
+```math
+R(x)[i] = \\left(4 x[i-\\tfrac{1}{2}] + 10 x[i+\\tfrac{1}{2}] -2 x[i+\\tfrac{3}{2}]  \\right) / 12
+```
+
+Only the right boundary condition should be set. Currently supported is:
+- [`SetValue(x₀)`](@ref): set the value to be `x₀` on the boundary.
+```math
+R(x)[n+\\tfrac{1}{2}] = x_0
+```
+"""
+struct RightBiased3rdOrderC2F{BCS} <: InterpolationOperator
+    bcs::BCS
+end
+RightBiased3rdOrderC2F(; kwargs...) = RightBiased3rdOrderC2F(NamedTuple(kwargs))
+
+return_space(
+    ::RightBiased3rdOrderC2F,
+    space::Spaces.CenterFiniteDifferenceSpace,
+) = Spaces.FaceFiniteDifferenceSpace(space)
+return_space(
+    ::RightBiased3rdOrderC2F,
+    space::Spaces.CenterExtrudedFiniteDifferenceSpace,
+) = Spaces.FaceExtrudedFiniteDifferenceSpace(space)
+
+stencil_interior_width(::RightBiased3rdOrderC2F, arg) = ((-half - 1, half + 1),)
+stencil_interior(::RightBiased3rdOrderC2F, loc, idx, arg) =
+    (
+        4 * getidx(arg, loc, idx - half) + 10 * getidx(arg, loc, idx + half) -
+        2 * getidx(arg, loc, idx + half + 1)
+    ) / 12
+
+boundary_width(::RightBiased3rdOrderC2F, ::SetValue, arg) = 1
+function stencil_right_boundary(
+    ::RightBiased3rdOrderC2F,
+    bc::SetValue,
+    loc,
+    idx,
+    arg,
+)
+    @assert idx == right_face_boundary_idx(arg)
+    bc.val
+end
+
+"""
+    R = RightBiased3rdOrderF2C(;boundaries)
+    R.(x)
+
+Interpolate a face-valued field to a center-valued field from the right, using a 3rd-order reconstruction.
+```math
+R(x)[i] = \\left(4 x[i] + 10 x[i+1] -2 x[i+2]  \\right) / 12
+```
+
+Only the right boundary condition should be set. Currently supported is:
+- [`SetValue(x₀)`](@ref): set the value to be `x₀` on the boundary.
+```math
+R(x)[n+\\tfrac{1}{2}] = x_0
+```
+"""
+struct RightBiased3rdOrderF2C{BCS} <: InterpolationOperator
+    bcs::BCS
+end
+RightBiased3rdOrderF2C(; kwargs...) = RightBiased3rdOrderF2C(NamedTuple(kwargs))
+
+return_space(
+    ::RightBiased3rdOrderF2C,
+    space::Spaces.FaceFiniteDifferenceSpace,
+) = Spaces.CenterFiniteDifferenceSpace(space)
+return_space(
+    ::RightBiased3rdOrderF2C,
+    space::Spaces.FaceExtrudedFiniteDifferenceSpace,
+) = Spaces.CenterExtrudedFiniteDifferenceSpace(space)
+
+stencil_interior_width(::RightBiased3rdOrderF2C, arg) = ((-half - 1, half + 1),)
+stencil_interior(::RightBiased3rdOrderF2C, loc, idx, arg) =
+    (
+        4 * getidx(arg, loc, idx - half) + 10 * getidx(arg, loc, idx + half) -
+        2 * getidx(arg, loc, idx + half + 1)
+    ) / 12
+
+boundary_width(::RightBiased3rdOrderF2C, ::SetValue, arg) = 1
+function stencil_right_boundary(
+    ::RightBiased3rdOrderF2C,
+    bc::SetValue,
+    loc,
+    idx,
+    arg,
+)
+    @assert idx == right_center_boundary_idx(arg)
+    bc.val
+end
 
 abstract type WeightedInterpolationOperator <: InterpolationOperator end
 # TODO: this is not in general correct and the return type
@@ -730,28 +1012,33 @@ return_eltype(::AdvectionOperator, velocity, arg) = eltype(arg)
     U = UpwindBiasedProductC2F(;boundaries)
     U.(v, x)
 
-Compute the product of a face-valued vector field `v` and a center-valued field
-`x` at cell faces by upwinding `x` according to `v`
+Compute the product of the face-valued vector field `v` and a center-valued
+field `x` at cell faces by upwinding `x` according to the direction of `v`.
+
+More precisely, it is computed based on the sign of the 3rd contravariant
+component, and it returns a `Contravariant3Vector`:
 ```math
-U(v,x)[i] = \\begin{cases}
-  v[i] x[i-\\tfrac{1}{2}] \\textrm{, if } v[i] > 0 \\\\
-  v[i] x[i+\\tfrac{1}{2}] \\textrm{, if } v[i] < 0
+U(\\boldsymbol{v},x)[i] = \\begin{cases}
+  v^3[i] x[i-\\tfrac{1}{2}]\\boldsymbol{e}_3 \\textrm{, if } v^3[i] > 0 \\\\
+  v^3[i] x[i+\\tfrac{1}{2}]\\boldsymbol{e}_3 \\textrm{, if } v^3[i] < 0
   \\end{cases}
 ```
+where ``\\boldsymbol{e}_3`` is the 3rd covariant basis vector.
 
 Supported boundary conditions are:
-- [`SetValue(x₀)`](@ref): set the value of `x` to be `x₀` on the boundary. On
-  the left boundary the stencil is
+- [`SetValue(x₀)`](@ref): set the value of `x` to be `x₀` in a hypothetical
+  ghost cell on the other side of the boundary. On the left boundary the stencil
+  is
   ```math
-  U(v,x)[\\tfrac{1}{2}] = \\begin{cases}
-    v[\\tfrac{1}{2}] x_0 \\textrm{, if }  v[\\tfrac{1}{2}] > 0 \\\\
-    v[\\tfrac{1}{2}] x[1] \\textrm{, if }  v[\\tfrac{1}{2}] < 0
+  U(\\boldsymbol{v},x)[\\tfrac{1}{2}] = \\begin{cases}
+    v^3[\\tfrac{1}{2}] x_0  \\boldsymbol{e}_3 \\textrm{, if }  v^3[\\tfrac{1}{2}] > 0 \\\\
+    v^3[\\tfrac{1}{2}] x[1] \\boldsymbol{e}_3 \\textrm{, if }  v^3[\\tfrac{1}{2}] < 0
     \\end{cases}
   ```
 - [`Extrapolate()`](@ref): set the value of `x` to be the same as the closest
   interior point. On the left boundary, the stencil is
   ```math
-  U(v,x)[\\tfrac{1}{2}] = U(v,x)[1 + \\tfrac{1}{2}]
+  U(\\boldsymbol{v},x)[\\tfrac{1}{2}] = U(\\boldsymbol{v},x)[1 + \\tfrac{1}{2}]
   ```
 """
 struct UpwindBiasedProductC2F{BCS} <: AdvectionOperator
@@ -783,6 +1070,7 @@ end
 
 stencil_interior_width(::UpwindBiasedProductC2F, velocity, arg) =
     ((0, 0), (-half, half))
+
 function stencil_interior(::UpwindBiasedProductC2F, loc, idx, velocity, arg)
     space = axes(arg)
     a⁻ = stencil_interior(LeftBiasedC2F(), loc, idx, arg)
@@ -795,6 +1083,7 @@ function stencil_interior(::UpwindBiasedProductC2F, loc, idx, velocity, arg)
 end
 
 boundary_width(::UpwindBiasedProductC2F, ::SetValue, velocity, arg) = 1
+
 function stencil_left_boundary(
     ::UpwindBiasedProductC2F,
     bc::SetValue,
@@ -813,6 +1102,7 @@ function stencil_left_boundary(
     )
     return Geometry.Contravariant3Vector(upwind_biased_product(vᶠ, aᴸᴮ, a⁺))
 end
+
 function stencil_right_boundary(
     ::UpwindBiasedProductC2F,
     bc::SetValue,
@@ -833,6 +1123,7 @@ function stencil_right_boundary(
 end
 
 boundary_width(::UpwindBiasedProductC2F, ::Extrapolate, velocity, arg) = 1
+
 function stencil_left_boundary(
     op::UpwindBiasedProductC2F,
     ::Extrapolate,
@@ -845,6 +1136,7 @@ function stencil_left_boundary(
     @assert idx == left_face_boundary_idx(space)
     stencil_interior(op, loc, idx + 1, velocity, arg)
 end
+
 function stencil_right_boundary(
     op::UpwindBiasedProductC2F,
     ::Extrapolate,
@@ -873,7 +1165,13 @@ U(v,x)[i] = \\begin{cases}
 This stencil is based on [WickerSkamarock2002](@cite), eq. 4(a).
 
 Supported boundary conditions are:
-- At the moment this is defined only for periodic meshes.
+- [`FirstOrderOneSided(x₀)`](@ref): uses the first-order downwind scheme to compute `x` on the left boundary,
+  and the first-order upwind scheme to compute `x` on the right boundary.
+- [`ThirdOrderOneSided(x₀)`](@ref): uses the third-order downwind reconstruction to compute `x` on the left boundary,
+and the third-order upwind reconstruction to compute `x` on the right boundary.
+
+!!! note
+    These boundary conditions do not define the value at the actual boundary faces, and so this operator cannot be materialized directly: it needs to be composed with another operator that does not make use of this value, e.g. a [`DivergenceF2C`](@ref) operator, with a [`SetValue`](@ref) boundary.
 """
 struct Upwind3rdOrderBiasedProductC2F{BCS} <: AdvectionOperator
     bcs::BCS
@@ -927,85 +1225,97 @@ function stencil_interior(
     )
 end
 
-boundary_width(::Upwind3rdOrderBiasedProductC2F, ::SetValue, velocity, arg) = 2
+boundary_width(
+    ::Upwind3rdOrderBiasedProductC2F,
+    ::FirstOrderOneSided,
+    velocity,
+    arg,
+) = 2
 
-# TODO: Need to fix BCs. Currently only periodic supported.
 function stencil_left_boundary(
     ::Upwind3rdOrderBiasedProductC2F,
-    bc::SetValue,
+    bc::FirstOrderOneSided,
     loc,
     idx,
     velocity,
     arg,
 )
     space = axes(arg)
-    @assert idx == left_face_boundary_idx(space)
-    aᴸᴮ = bc.val
+    @assert idx <= left_face_boundary_idx(space) + 1
+    v = Geometry.contravariant3(
+        getidx(velocity, loc, idx),
+        Geometry.LocalGeometry(space, idx),
+    )
     a⁻ = stencil_interior(LeftBiasedC2F(), loc, idx, arg)
+    a⁺ = stencil_interior(RightBiased3rdOrderC2F(), loc, idx, arg)
+    return Geometry.Contravariant3Vector(upwind_biased_product(v, a⁻, a⁺))
+end
+
+function stencil_right_boundary(
+    ::Upwind3rdOrderBiasedProductC2F,
+    bc::FirstOrderOneSided,
+    loc,
+    idx,
+    velocity,
+    arg,
+)
+    space = axes(arg)
+    @assert idx >= right_face_boundary_idx(space) - 1
+    v = Geometry.contravariant3(
+        getidx(velocity, loc, idx),
+        Geometry.LocalGeometry(space, idx),
+    )
+    a⁻ = stencil_interior(LeftBiased3rdOrderC2F(), loc, idx, arg)
     a⁺ = stencil_interior(RightBiasedC2F(), loc, idx, arg)
-    a⁺⁺ = stencil_interior(RightBiasedC2F(), loc, idx + 1, arg)
+    return Geometry.Contravariant3Vector(upwind_biased_product(v, a⁻, a⁺))
+
+end
+
+boundary_width(
+    ::Upwind3rdOrderBiasedProductC2F,
+    ::ThirdOrderOneSided,
+    velocity,
+    arg,
+) = 2
+
+function stencil_left_boundary(
+    ::Upwind3rdOrderBiasedProductC2F,
+    bc::ThirdOrderOneSided,
+    loc,
+    idx,
+    velocity,
+    arg,
+)
+    space = axes(arg)
+    @assert idx <= left_face_boundary_idx(space) + 1
+
     vᶠ = Geometry.contravariant3(
         getidx(velocity, loc, idx),
         Geometry.LocalGeometry(space, idx),
     )
-    return Geometry.Contravariant3Vector(
-        upwind_3rdorder_biased_product(vᶠ, aᴸᴮ, a⁻⁻, a⁺, a⁺⁺),
-    )
+    a = stencil_interior(RightBiased3rdOrderC2F(), loc, idx, arg)
+
+    return Geometry.Contravariant3Vector(vᶠ * a)
 end
 
-# TODO: Need to fix BCs. Currently only periodic supported.
 function stencil_right_boundary(
     ::Upwind3rdOrderBiasedProductC2F,
-    bc::SetValue,
+    bc::ThirdOrderOneSided,
     loc,
     idx,
     velocity,
     arg,
 )
     space = axes(arg)
-    @assert idx == right_face_boundary_idx(space)
-    a⁻ = stencil_interior(LeftBiasedC2F(), loc, idx, arg)
-    a⁻⁻ = stencil_interior(LeftBiasedC2F(), loc, idx - 1, arg)
-    a⁺ = stencil_interior(RightBiasedC2F(), loc, idx, arg)
-    aᴿᴮ = bc.val
+    @assert idx <= right_face_boundary_idx(space) - 1
+
     vᶠ = Geometry.contravariant3(
         getidx(velocity, loc, idx),
         Geometry.LocalGeometry(space, idx),
     )
-    return Geometry.Contravariant3Vector(
-        upwind_3rdorder_biased_product(vᶠ, a⁻⁻, a⁻, a⁺, aᴿᴮ),
-    )
-end
+    a = stencil_interior(LeftBiased3rdOrderC2F(), loc, idx, arg)
 
-boundary_width(::Upwind3rdOrderBiasedProductC2F, ::Extrapolate, velocity, arg) =
-    2
-
-# TODO: Need to fix BCs. Currently only periodic supported.
-function stencil_left_boundary(
-    op::Upwind3rdOrderBiasedProductC2F,
-    ::Extrapolate,
-    loc,
-    idx,
-    velocity,
-    arg,
-)
-    space = axes(arg)
-    @assert idx == left_face_boundary_idx(space)
-    stencil_interior(op, loc, idx + 2, velocity, arg)
-end
-
-# TODO: Need to fix BCs. Currently only periodic supported.
-function stencil_right_boundary(
-    op::Upwind3rdOrderBiasedProductC2F,
-    ::Extrapolate,
-    loc,
-    idx,
-    velocity,
-    arg,
-)
-    space = axes(arg)
-    @assert idx == right_face_boundary_idx(space)
-    stencil_interior(op, loc, idx - 2, velocity, arg)
+    return Geometry.Contravariant3Vector(vᶠ * a)
 end
 
 """

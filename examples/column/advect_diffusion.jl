@@ -34,7 +34,7 @@ domain = Domains.IntervalDomain(
     boundary_names = (:bottom, :top),
 )
 #stretching = Meshes.ExponentialStretching(H_scale)
-stretching = Meshes.GeneralizedExponentialStretching(0.1,4.0)
+stretching = Meshes.GeneralizedExponentialStretching(0.1, 4.0)
 mesh = Meshes.IntervalMesh(domain, stretching, nelems = n)
 
 cs = Spaces.CenterFiniteDifferenceSpace(mesh)

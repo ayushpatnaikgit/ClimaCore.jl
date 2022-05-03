@@ -52,7 +52,7 @@ function reconstruct_metric(
         @SMatrix [
             v∂x∂ξ[1, 1] v∂x∂ξ[1, 2] 0
             v∂x∂ξ[2, 1] v∂x∂ξ[2, 2] 0
-            v∇z[1] v∇z[2] Δz
+            0 0 Δz
         ]
     )
 end

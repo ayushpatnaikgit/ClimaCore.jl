@@ -8,6 +8,7 @@ CurrentModule = ClimaCore
 
 ```@docs
 DataLayouts
+DataLayouts.DataF
 DataLayouts.IF
 DataLayouts.IJF
 DataLayouts.VF
@@ -177,6 +178,17 @@ Spaces.Quadratures.differentiation_matrix
 Spaces.Quadratures.orthonormal_poly
 ```
 
+#### Internals
+
+```@docs
+Spaces.dss_transform
+Spaces.dss_untransform
+Spaces.dss_interior_faces!
+Spaces.dss_local_vertices!
+Spaces.dss_ghost_faces!
+Spaces.dss_ghost_vertices!
+```
+
 ## RecursiveApply
 
 ```@docs
@@ -196,6 +208,7 @@ Base.ones(::Spaces.AbstractSpace)
 Base.sum(::Fields.Field)
 Fields.Statistics.mean(::Fields.Field)
 Fields.LinearAlgebra.norm(::Fields.Field)
+Fields.set!
 ```
 
 ## Limiters
