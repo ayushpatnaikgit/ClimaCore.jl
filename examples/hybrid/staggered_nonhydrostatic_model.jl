@@ -231,8 +231,10 @@ function default_remaining_tendency!(Yₜ, Y, p, t)
     ᶠu¹² = @. Geometry.Contravariant12Vector(ᶠᶜu.components.data.:1, ᶠᶜu.components.data.:2)
     ᶠu³ = @. Geometry.Contravariant3Vector(ᶠᶜu.components.data.:3)
 
+#    @. Yₜ.c.uₕ -=
+#        ᶜinterp(ᶠω¹² × ᶠu³) + (ᶜf + ᶜω³) × Geometry.Contravariant12Vector(ᶜuₕ)
     @. Yₜ.c.uₕ -=
-        ᶜinterp(ᶠω¹² × ᶠu³) + (ᶜf + ᶜω³) × Geometry.Contravariant12Vector(ᶜuₕ)
+    ᶜinterp(ᶠω¹² × ᶠu³) + (ᶜf + ᶜω³) × Geometry.project(Geometry.Contravariant12Axis(), ᶜuvw)
     if point_type <: Geometry.Abstract3DPoint
         @. Yₜ.c.uₕ -= gradₕ(ᶜp) / ᶜρ + gradₕ(ᶜK + ᶜΦ)
     elseif point_type <: Geometry.Abstract2DPoint

@@ -46,7 +46,7 @@ const κ₄ = 1.0e16 # hyperviscosity
 function sphere_3D(
     R = 6.37122e6,
     zlim = (0, 12.0e3),
-    helem = 4,
+    helem = 8,
     zelem = 12,
     npoly = 4,
 )
@@ -221,8 +221,8 @@ dydt = similar(y0)
 rhs!(dydt, y0, (coords, face_coords), 0.0)
 
 # run!
-T = 86400 * 12
-dt = 60 * 60
+T = 86400 * 1
+dt = 60 * 60 / 10
 prob = ODEProblem(rhs!, y0, (0.0, T), (coords, face_coords))
 sol = solve(
     prob,

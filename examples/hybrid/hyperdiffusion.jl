@@ -18,6 +18,7 @@ hyperdiffusion_cache(
 function hyperdiffusion_tendency!(Yₜ, Y, p, t)
     ᶜρ = Y.c.ρ
     ᶜuₕ = Y.c.uₕ
+    ᶠw = Y.f.w
     (; ᶜp, ᶜχ, ᶜχuₕ) = p # assume that ᶜp has been updated
     (; ghost_buffer, κ₄, divergence_damping_factor, use_tempest_mode) = p
     point_type = eltype(Fields.local_geometry_field(axes(Y.c)).coordinates)
@@ -56,17 +57,21 @@ function hyperdiffusion_tendency!(Yₜ, Y, p, t)
     end
 
     if point_type <: Geometry.Abstract3DPoint
+        ᶜuvw = @. C123(ᶜuₕ) + C123(ᶜinterp(ᶠw))
+        ᶜuₕₜ = @. Geometry.project(Geometry.Covariant12Axis(), ᶜuvw)
+        strongcurl = @. curlₕ(ᶜuₕₜ)
+        strongcurl_project = @. Geometry.project(Geometry.Covariant3Axis(), strongcurl)
+        weakcurl = @. wcurlₕ(Geometry.project(Geometry.Covariant3Axis(),strongcurl_project))
         @. ᶜχuₕ =
-            wgradₕ(divₕ(ᶜuₕ)) - Geometry.Covariant12Vector(
-                wcurlₕ(Geometry.Covariant3Vector(curlₕ(ᶜuₕ))),
-            )
+          wgradₕ(divₕ(ᶜuₕ)) - Geometry.project(Geometry.Covariant12Axis(), weakcurl)
         Spaces.weighted_dss!(ᶜχuₕ, ghost_buffer.χuₕ)
+
+        strongcurl = @. Geometry.project(Geometry.Covariant3Axis(),curlₕ(ᶜχuₕ))
+        weakcurl = @. Geometry.project(Geometry.Covariant12Axis(),wcurlₕ(strongcurl))
+
         @. Yₜ.c.uₕ -=
             κ₄ * (
-                divergence_damping_factor * wgradₕ(divₕ(ᶜχuₕ)) -
-                Geometry.Covariant12Vector(
-                    wcurlₕ(Geometry.Covariant3Vector(curlₕ(ᶜχuₕ))),
-                )
+                divergence_damping_factor * wgradₕ(divₕ(ᶜχuₕ)) - weakcurl
             )
     elseif point_type <: Geometry.Abstract2DPoint
         @. ᶜχuₕ = Geometry.Covariant12Vector(wgradₕ(divₕ(ᶜuₕ)))
