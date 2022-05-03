@@ -39,8 +39,8 @@ const ᶜdivᵥ = Operators.DivergenceF2C(
     bottom = Operators.SetValue(Geometry.Contravariant3Vector(FT(0))),
 )
 const ᶠgradᵥ = Operators.GradientC2F(
-    bottom = Operators.SetGradient(Geometry.Covariant3Vector(FT(0))),
-    top = Operators.SetGradient(Geometry.Covariant3Vector(FT(0))),
+    bottom = Operators.SetGradient(Geometry.Contravariant3Vector(FT(0))),
+    top = Operators.SetGradient(Geometry.Contravariant3Vector(FT(0))),
 )
 const ᶠcurlᵥ = Operators.CurlC2F(
     bottom = Operators.SetCurl(Geometry.Contravariant12Vector(FT(0), FT(0))),
@@ -225,11 +225,11 @@ function default_remaining_tendency!(Yₜ, Y, p, t)
     ᶠu =
         Geometry.Covariant123Vector.(ᶠinterp.(ᶜuₕ)) .+
         Geometry.Covariant123Vector.(ᶠw)
-    ᶠuᶜ = Geometry.transform(Geometry.Contravariant123Vector(), ᶠu)
-    #@. ᶠu¹² = Geometry.Contravariant12Vector(ᶠinterp(ᶜuₕ)) 
+    #@. ᶠu¹² = Geometry.Contravariant12Vector(ᶠu) 
     #@. ᶠu³ = Geometry.Contravariant3Vector(ᶠw) 
-    #    @. ᶠu¹² = Geometry.project.(Ref(Geometry.Contravariant12Axis()), ᶠu)
-    #    @. ᶠu³ = Geometry.project.(Ref(Geometry.Contravariant3Axis()), ᶠu)
+    ᶠᶜu = @. Geometry.Contravariant123Vector(ᶠu)
+    ᶠu¹² = @. Geometry.Contravariant12Vector(ᶠᶜu.components.data.:1, ᶠᶜu.components.data.:2)
+    ᶠu³ = @. Geometry.Contravariant3Vector(ᶠᶜu.components.data.:3)
 
     @. Yₜ.c.uₕ -=
         ᶜinterp(ᶠω¹² × ᶠu³) + (ᶜf + ᶜω³) × Geometry.Contravariant12Vector(ᶜuₕ)
