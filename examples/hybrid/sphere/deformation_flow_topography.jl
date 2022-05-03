@@ -11,7 +11,8 @@ import ClimaCore:
     Topologies,
     Spaces,
     Fields,
-    Operators
+    Operators, 
+    Hypsography
 import ClimaCore.Utilities: half
 
 using OrdinaryDiffEq: ODEProblem, solve, SSPRK33
@@ -42,6 +43,28 @@ const R_t = R / 2 # horizontal half-width of tracers
 const Z_t = 1000.0 # vertical half-width of tracers
 const κ₄ = 1.0e16 # hyperviscosity
 
+#include("/Users/asridhar/Research/Codes/Topography/read_topo.jl")
+#function warp(coords)
+# (; lat, long) = coords
+# FT = eltype(lat)
+# return FT(earth_spline(long,lat))
+#end
+
+function warp(coords)
+ (; lat, long) = coords
+ FT = eltype(lat)
+ S = FT(1)
+ h₀ = FT(5000)
+ ξ = FT(10000)
+ d = FT(10000)
+ lat_c = FT(0)
+ lon_c = FT(0) 
+ ϕ_gc = @. acos(sind(lat_c)*sind(lat) + cosd(lat)*cosd(lat_c)*cosd(long-lon_c)) # Great circle radius
+ R_gc = @. R/S * ϕ_gc # Great circle radius
+ zₛ = @. h₀ * exp(-R_gc^2/d^2)*(cos(π*R_gc/ξ))^2
+ return FT(zₛ)
+end
+
 # set up function space
 function sphere_3D(
     R = 6.37122e6,
@@ -49,26 +72,33 @@ function sphere_3D(
     helem = 4,
     zelem = 12,
     npoly = 4,
+    warp = warp,
 )
     FT = Float64
-    vertdomain = Domains.IntervalDomain(
-        Geometry.ZPoint{FT}(zlim[1]),
-        Geometry.ZPoint{FT}(zlim[2]);
-        boundary_names = (:bottom, :top),
+    z_domain = Domains.IntervalDomain(
+                                      Geometry.ZPoint(zero(zlim[1])),
+                                      Geometry.ZPoint(zlim[2]);
+        boundary_tags = (:bottom, :top),
     )
-    vertmesh = Meshes.IntervalMesh(vertdomain, nelems = zelem)
-    vert_center_space = Spaces.CenterFiniteDifferenceSpace(vertmesh)
-
+    z_mesh = Meshes.IntervalMesh(z_domain, nelems = zelem)
+    z_topology = Topologies.IntervalTopology(z_mesh)
+    z_space = Spaces.FaceFiniteDifferenceSpace(z_topology)
+    
     horzdomain = Domains.SphereDomain(R)
-    horzmesh = Meshes.EquiangularCubedSphere(horzdomain, helem)
+    horzmesh = Meshes.EquiangularCubedSphere(horzdomain,helem)
     horztopology = Topologies.Topology2D(horzmesh)
     quad = Spaces.Quadratures.GLL{npoly + 1}()
     horzspace = Spaces.SpectralElementSpace2D(horztopology, quad)
+    z_surface = warp.(Fields.coordinate_field(horzspace))
 
-    hv_center_space =
-        Spaces.ExtrudedFiniteDifferenceSpace(horzspace, vert_center_space)
-    hv_face_space = Spaces.FaceExtrudedFiniteDifferenceSpace(hv_center_space)
-    return (hv_center_space, hv_face_space)
+    face_space = Spaces.ExtrudedFiniteDifferenceSpace(
+        horzspace,
+        z_space,
+        Hypsography.LinearAdaption(),
+        z_surface,
+    )
+    center_space = Spaces.CenterExtrudedFiniteDifferenceSpace(face_space)
+    return center_space, face_space
 end
 
 # set up 3D domain
@@ -144,9 +174,28 @@ function rhs!(dydt, y, (coords, face_coords), t)
     uv = @. k * sind(2 * λp) * cosd(ϕ) * cos(pi * t / τ)
     ω = @. ω_0 * sind(λpf) * cosd(ϕf) * cos(2 * pi * t / τ) * sp
     uw = @. -ω / ρ_ref(zf) / grav
+  
+    If2c = Operators.InterpolateF2C()
+    Ic2f = Operators.InterpolateC2F(
+        bottom = Operators.Extrapolate(),
+        top = Operators.Extrapolate(),
+    )
+    vdivf2c = Operators.DivergenceF2C(
+        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
+        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
+    )
+    hdiv = Operators.Divergence()
+    hwdiv = Operators.WeakDivergence()
+    hgrad = Operators.Gradient()
 
-    uₕ = Geometry.Covariant12Vector.(Geometry.UVVector.(uu, uv))
-    w = Geometry.Covariant3Vector.(Geometry.WVector.(uw))
+    
+    ccu = Geometry.UVWVector.(Geometry.UVector.(uu))
+    ccv = Geometry.UVWVector.(Geometry.VVector.(uv))
+    ccw = Geometry.UVWVector.(Geometry.WVector.(If2c.(uw)))
+    cuvw = @. ccu + ccv + ccw
+
+    uₕ = @. Geometry.project(Geometry.Covariant12Axis(), cuvw)
+    w = @. Ic2f(Geometry.project(Geometry.Covariant3Axis(), cuvw))
 
     ρ = y.ρ
     ρq1 = y.ρq1
@@ -161,19 +210,6 @@ function rhs!(dydt, y, (coords, face_coords), t)
     dρq4 = dydt.ρq4
 
     dρ .= 0 .* ρ
-
-    If2c = Operators.InterpolateF2C()
-    Ic2f = Operators.InterpolateC2F(
-        bottom = Operators.Extrapolate(),
-        top = Operators.Extrapolate(),
-    )
-    vdivf2c = Operators.DivergenceF2C(
-        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-    )
-    hdiv = Operators.Divergence()
-    hwdiv = Operators.WeakDivergence()
-    hgrad = Operators.Gradient()
 
     ### HYPERVISCOSITY
 
@@ -193,8 +229,6 @@ function rhs!(dydt, y, (coords, face_coords), t)
     Spaces.weighted_dss!(dρq4)
     @. dρq4 = -κ₄ * hwdiv(ρ * hgrad(χq4))
 
-    cw = If2c.(w)
-    cuvw = Geometry.Covariant123Vector.(uₕ) .+ Geometry.Covariant123Vector.(cw)
 
     @. dρq1 -= hdiv(cuvw * ρq1)
     @. dρq1 -= vdivf2c(w * Ic2f(ρq1))
@@ -258,7 +292,7 @@ q4_error =
 ENV["GKSwstype"] = "nul"
 using ClimaCorePlots, Plots
 Plots.GRBackend()
-dir = "deformation_flow"
+dir = "deformation_flow_topography"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
