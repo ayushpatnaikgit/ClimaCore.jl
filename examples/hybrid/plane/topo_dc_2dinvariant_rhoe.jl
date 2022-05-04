@@ -163,9 +163,7 @@ function rhs_invariant!(dY, Y, _, t)
     cuwᶜ₂ = @. Geometry.project(Geometry.Contravariant3Axis(), cuwᶜ) 
     cuwᶜ_bc = @. cuwᶜ₂ * -0
     ubc = @. Geometry.Contravariant13Vector(cuwᶜ₁) +  Geometry.Contravariant13Vector(cuwᶜ_bc)
-    cubc = @. Geometry.Covariant3Vector(ubc)
-    @show maximum(parent(cubc))
-    @show minimum(parent(cubc))
+    cubc = Geometry.Contravariant3Vector(0.0)
 
     ce = @. cρe / cρ
     cI = @. ce - Φ(z) - (norm(cuw)^2) / 2
@@ -296,7 +294,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 # run!
 using OrdinaryDiffEq
 timeend = 900.0
-Δt = 0.25
+Δt = 0.10
 prob = ODEProblem(rhs_invariant!, Y, (0.0, timeend))
 integrator = OrdinaryDiffEq.init(
     prob,
