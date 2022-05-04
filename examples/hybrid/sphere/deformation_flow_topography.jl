@@ -43,27 +43,27 @@ const R_t = R / 2 # horizontal half-width of tracers
 const Z_t = 1000.0 # vertical half-width of tracers
 const κ₄ = 1.0e16 # hyperviscosity
 
-#include("/Users/asridhar/Research/Codes/Topography/read_topo.jl")
-#function warp(coords)
-# (; lat, long) = coords
-# FT = eltype(lat)
-# return FT(earth_spline(long,lat))
-#end
-
+include("/Users/asridhar/Research/Codes/Topography/read_topo.jl")
 function warp(coords)
  (; lat, long) = coords
  FT = eltype(lat)
- S = FT(1)
- h₀ = FT(5000)
- ξ = FT(10000)
- d = FT(10000)
- lat_c = FT(0)
- lon_c = FT(0) 
- ϕ_gc = @. acos(sind(lat_c)*sind(lat) + cosd(lat)*cosd(lat_c)*cosd(long-lon_c)) # Great circle radius
- R_gc = @. R/S * ϕ_gc # Great circle radius
- zₛ = @. h₀ * exp(-R_gc^2/d^2)*(cos(π*R_gc/ξ))^2
- return FT(zₛ)
+ return FT(earth_spline(long,lat))
 end
+
+#function warp(coords)
+# (; lat, long) = coords
+# FT = eltype(lat)
+# S = FT(1)
+# h₀ = FT(5000)
+# ξ = FT(10000)
+# d = FT(10000)
+# lat_c = FT(0)
+# lon_c = FT(0) 
+# ϕ_gc = @. acos(sind(lat_c)*sind(lat) + cosd(lat)*cosd(lat_c)*cosd(long-lon_c)) # Great circle radius
+# R_gc = @. R/S * ϕ_gc # Great circle radius
+# zₛ = @. h₀ * exp(-R_gc^2/d^2)*(cos(π*R_gc/ξ))^2
+# return FT(zₛ)
+#end
 
 # set up function space
 function sphere_3D(
