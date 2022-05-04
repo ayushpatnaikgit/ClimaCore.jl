@@ -1,5 +1,3 @@
-push!(LOAD_PATH, joinpath(@__DIR__, "..", ".."))
-
 using Test
 using StaticArrays, IntervalSets, LinearAlgebra, UnPack
 
@@ -17,42 +15,23 @@ import ClimaCore:
     Hypsography
 using ClimaCore.Geometry
 
-using DiffEqCallbacks
-
 using Logging: global_logger
 using TerminalLoggers: TerminalLogger
 global_logger(TerminalLogger())
 
-const MSLP = 1e5 # mean sea level pressure
-const grav = 9.8 # gravitational constant
-const R_d = 287.058 # R dry (gas constant / mol mass dry air)
-const γ = 1.4 # heat capacity ratio
-const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
-const C_v = R_d / (γ - 1) # heat capacity at constant volume
-const T_0 = 273.16 # triple point temperature
-const uᵣ = 10.0
-const kinematic_viscosity = 0.0 #m²/s
-const hyperdiffusivity = 1e8 #m²/s
-
-function warp_surface(coord)
-    # Parameters from GMD-9-2007-2016
-    # Specification for Agnesi Mountain following 
-    # Ulrich and Guerra [2016 GMD]
+function no_warp(coord)
     x = Geometry.component(coord, 1)
     FT = eltype(x)
-    λ = 4000
-    ac = 5000
-    hc = 1000
-    return hc * exp(-(x / ac)^2) * (cos(π * x / λ))^2
+    return FT(0) * x
 end
 
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 30,
-    zelem = 40,
+    xelem = 64,
+    zelem = 32,
     npoly = 4,
-    warp_fn = warp_surface,
+    warp_fn = no_warp,
 )
     FT = Float64
     vertdomain = Domains.IntervalDomain(
@@ -72,7 +51,6 @@ function hvspace_2D(
     horztopology = Topologies.IntervalTopology(horzmesh)
     quad = Spaces.Quadratures.GLL{npoly + 1}()
     horzspace = Spaces.SpectralElementSpace1D(horztopology, quad)
-
     z_surface = warp_fn.(Fields.coordinate_field(horzspace))
     hv_face_space = Spaces.ExtrudedFiniteDifferenceSpace(
         horzspace,
@@ -85,26 +63,45 @@ function hvspace_2D(
 end
 
 # set up 2D domain - doubly periodic box
-hv_center_space, hv_face_space = hvspace_2D((-30000, 30000), (0, 25000))
+hv_center_space, hv_face_space = hvspace_2D((-25600, 25600), (0, 6400))
+
+const MSLP = 1e5 # mean sea level pressure
+const grav = 9.8 # gravitational constant
+const R_d = 287.058 # R dry (gas constant / mol mass dry air)
+const γ = 1.4 # heat capacity ratio
+const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
+const C_v = R_d / (γ - 1) # heat capacity at constant volume
+const T_0 = 273.16 # triple point temperature
 
 Φ(z) = grav * z
 
 # Reference: https://journals.ametsoc.org/view/journals/mwre/140/4/mwr-d-10-05073.1.xml, Section 5a
-# Prognostic thermodynamic variable: Total Energy 
-function init_advection_over_mountain(x, z)
-    θ₀ = 280.0
+# Prognostic thermodynamic variable: Total Energy
+function init_dry_density_current_2d(x, z)
+    x_c = 0.0
+    z_c = 3000.0
+    r_c = 1.0
+    x_r = 4000.0
+    z_r = 2000.0
+    θ_b = 300.0
+    θ_c = -15.0
     cp_d = C_p
     cv_d = C_v
-    p₀ = MSLP
+    p_0 = MSLP
     g = grav
 
-    𝒩 = 0.01
-    π_exner = @. exp(-g * z / (cp_d * θ₀))
-    θ = @. θ₀ * exp(𝒩^2 * z / g)
-    T = @. π_exner * θ # temperature
-    ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d / R_d)
-    e = @. cv_d * (T - T_0) + Φ(z) + 50.0
-    ρe = @. ρ * e
+    # auxiliary quantities
+    r = sqrt((x - x_c)^2 / x_r^2 + (z - z_c)^2 / z_r^2)
+    θ_p = r < r_c ? 0.5 * θ_c * (1.0 + cospi(r / r_c)) : 0.0 # potential temperature perturbation
+
+    θ = θ_b + θ_p # potential temperature
+    π_exn = 1.0 - Φ(z) / cp_d / θ # exner function
+    T = π_exn * θ # temperature
+    p = p_0 * π_exn^(cp_d / R_d) # pressure
+    ρ = p / R_d / T # density
+    e = cv_d * (T - T_0) + Φ(z)
+    ρe = ρ * e # total energy
+
     return (ρ = ρ, ρe = ρe)
 end
 
@@ -112,59 +109,13 @@ end
 coords = Fields.coordinate_field(hv_center_space)
 face_coords = Fields.coordinate_field(hv_face_space)
 
-# Assign initial conditions to cell center, cell face variables
-# Group scalars (ρ, ρe) in Yc 
-# Retain uₕ and w as separate components of velocity vector (primitive variables)
-Yc = map(coord -> init_advection_over_mountain(coord.x, coord.z), coords)
+Yc = map(coord -> init_dry_density_current_2d(coord.x, coord.z), coords)
+uₕ = map(_ -> Geometry.Covariant1Vector(0.0), coords)
 w = map(_ -> Geometry.Covariant3Vector(0.0), face_coords)
-uₕ_local = map(_ -> Geometry.UWVector(uᵣ, 0.0), coords)
-uₕ = Geometry.Covariant1Vector.(uₕ_local)
-const u₀ = uₕ
-
-ᶜlg = Fields.local_geometry_field(hv_center_space)
-ᶠlg = Fields.local_geometry_field(hv_face_space)
-
 Y = Fields.FieldVector(Yc = Yc, uₕ = uₕ, w = w)
 
 energy_0 = sum(Y.Yc.ρe)
 mass_0 = sum(Y.Yc.ρ)
-
-function rayleigh_sponge_z(
-    z;
-    z_sponge = 15000.0,
-    z_max = 25000.0,
-    α = 0.5,  # Relaxation timescale
-    τ = 0.5,
-    γ = 2.0,
-)
-    if z >= z_sponge
-        r = (z - z_sponge) / (z_max - z_sponge)
-        β_sponge = α * sinpi(τ * r)^γ
-        return β_sponge
-    else
-        return eltype(z)(0)
-    end
-end
-function rayleigh_sponge_x(
-    x;
-    x_sponge = 20000.0,
-    x_max = 30000.0,
-    α = 0.5,  # Relaxation timescale
-    τ = 0.5,
-    γ = 2.0,
-)
-    if x >= x_sponge
-        r = (x - x_sponge) / (x_max - x_sponge)
-        β_sponge = α * sinpi(τ * r)^γ
-        return β_sponge
-    elseif x <= -x_sponge
-        r = (abs(x) - x_sponge) / (x_max - x_sponge)
-        β_sponge = α * sinpi(τ * r)^γ
-        return β_sponge
-    else
-        return eltype(x)(0)
-    end
-end
 
 function rhs_invariant!(dY, Y, _, t)
 
@@ -215,7 +166,7 @@ function rhs_invariant!(dY, Y, _, t)
     Spaces.weighted_dss!(dρe)
     Spaces.weighted_dss!(duₕ)
 
-    κ₄ = hyperdiffusivity # m^4/s
+    κ₄ = 0.0 # m^4/s
     @. dρe = -κ₄ * hwdiv(cρ * hgrad(χe))
     @. duₕ = -κ₄ * (hwgrad(hdiv(χuₕ)))
 
@@ -247,7 +198,7 @@ function rhs_invariant!(dY, Y, _, t)
 
     # curl term
     hcurl = Operators.Curl()
-    # effectively a homogeneous Neumann boundary condition on u₁ at the boundary
+    # effectively a homogeneous Dirichlet condition on u₁ at the boundary
     vcurlc2f = Operators.CurlC2F(
         bottom = Operators.SetCurl(Geometry.Contravariant2Vector(0.0)),
         top = Operators.SetCurl(Geometry.Contravariant2Vector(0.0)),
@@ -259,12 +210,9 @@ function rhs_invariant!(dY, Y, _, t)
     # cross product
     # convert to contravariant
     # these will need to be modified with topography
-    #    fu¹ =
-    #        Geometry.Contravariant1Vector.(Geometry.Covariant13Vector.(Ic2f.(cuₕ)),)
-    #    fu³ = Geometry.Contravariant3Vector.(Geometry.Covariant13Vector.(fw))
     fu =
-        Geometry.Covariant13Vector.(Ic2f.(cuₕ)) .+
-        Geometry.Covariant13Vector.(fw)
+        Geometry.Contravariant13Vector.(Ic2f.(cuₕ)) .+
+        Geometry.Contravariant13Vector.(fw)
     fu¹ = Geometry.project.(Ref(Geometry.Contravariant1Axis()), fu)
     fu³ = Geometry.project.(Ref(Geometry.Contravariant3Axis()), fu)
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
@@ -273,8 +221,8 @@ function rhs_invariant!(dY, Y, _, t)
 
     @. duₕ -= hgrad(cp) / cρ
     vgradc2f = Operators.GradientC2F(
-        bottom = Operators.SetGradient(Geometry.Contravariant3Vector(0.0)),
-        top = Operators.SetGradient(Geometry.Contravariant3Vector(0.0)),
+        bottom = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
+        top = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
     )
     @. dw -= vgradc2f(cp) / Ic2f(cρ)
 
@@ -291,7 +239,7 @@ function rhs_invariant!(dY, Y, _, t)
     # Uniform 2nd order diffusion
     ∂c = Operators.GradientF2C()
     fρ = @. Ic2f(cρ)
-    κ₂ = kinematic_viscosity # m^2/s
+    κ₂ = 75.0 # m^2/s
 
     ᶠ∇ᵥuₕ = @. vgradc2f(cuₕ.components.data.:1)
     ᶜ∇ᵥw = @. ∂c(fw.components.data.:1)
@@ -319,15 +267,6 @@ function rhs_invariant!(dY, Y, _, t)
     @. dρe += hκ₂∇²h_tot
     @. dρe += vκ₂∇²h_tot
 
-
-    # Sponge tendency
-    β = @. rayleigh_sponge_z(coords.z)
-    βx = @. rayleigh_sponge_x(coords.x)
-    @. duₕ -= β * (uₕ - u₀)
-    @. dw -= Ic2f(β) * fw
-    @. duₕ -= βx * (uₕ - u₀)
-    @. dw -= Ic2f(βx) * fw
-
     Spaces.weighted_dss!(dY.Yc)
     Spaces.weighted_dss!(dY.uₕ)
     Spaces.weighted_dss!(dY.w)
@@ -340,25 +279,16 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.30
-timeend = 3600.0 * 10.0
-function make_dss_func()
-    _dss!(x::Fields.Field) = Spaces.weighted_dss!(x)
-    _dss!(::Any) = nothing
-    dss_func(Y, t, integrator) = foreach(_dss!, Fields._values(Y))
-    return dss_func
-end
-dss_func = make_dss_func()
-dss_callback = FunctionCallingCallback(dss_func, func_start = true)
+timeend = 900.0
+Δt = 0.3
 prob = ODEProblem(rhs_invariant!, Y, (0.0, timeend))
 integrator = OrdinaryDiffEq.init(
     prob,
     SSPRK33(),
     dt = Δt,
-    saveat = 1800.0,
+    saveat = 10.0,
     progress = true,
     progress_message = (dt, u, p, t) -> t,
-    callback = dss_callback,
 );
 
 if haskey(ENV, "CI_PERF_SKIP_RUN") # for performance analysis
@@ -371,31 +301,29 @@ ENV["GKSwstype"] = "nul"
 import Plots, ClimaCorePlots
 Plots.GRBackend()
 
-dir = "nonzero_flow_agnesi1e6"
+dir = "dc_invariant_etot_no_warp"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
 anim = Plots.@animate for u in sol.u
-    Plots.plot(u.Yc.ρe ./ u.Yc.ρ, xlim = (-12000, 12000), ylim = (0, 10000))
+    Plots.plot(u.Yc.ρe ./ u.Yc.ρ)
 end
 Plots.mp4(anim, joinpath(path, "total_energy.mp4"), fps = 20)
 
 If2c = Operators.InterpolateF2C()
 anim = Plots.@animate for u in sol.u
-    Plots.plot(
-        Geometry.WVector.(Geometry.Covariant13Vector.(If2c.(u.w))),
-        xlim = (-12000, 12000),
-        ylim = (0, 10000),
-    )
+    ᶜuw = @. Geometry.Covariant13Vector(u.uₕ) +
+       Geometry.Covariant13Vector(If2c(u.w))
+    w = @. Geometry.project(Geometry.WAxis(), ᶜuw)
+    Plots.plot(w)
 end
 Plots.mp4(anim, joinpath(path, "vel_w.mp4"), fps = 20)
 
 anim = Plots.@animate for u in sol.u
-    Plots.plot(
-        Geometry.UVector.(Geometry.Covariant13Vector.(u.uₕ)),
-        xlim = (-12000, 12000),
-        ylim = (0, 10000),
-    )
+    ᶜuw = @. Geometry.Covariant13Vector(u.uₕ) +
+       Geometry.Covariant13Vector(If2c(u.w))
+    u = @. Geometry.project(Geometry.UAxis(), ᶜuw)
+    Plots.plot(u)
 end
 Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
 
