@@ -19,10 +19,18 @@ using Logging: global_logger
 using TerminalLoggers: TerminalLogger
 global_logger(TerminalLogger())
 
-function no_warp(coord)
+# Warping function as prescribed in GMD-8-317-2015
+function warp_surface(coord)
     x = Geometry.component(coord, 1)
     FT = eltype(x)
-    return FT(0) * x
+    xm1 = -6000
+    xm2 = +1000
+    xm3 = +4000
+    xm4 = +8000
+    am = 1000
+    am2 = 4000
+    H = 1500
+    return H / (1 + ((x - xm1) / am)^2) +  H/2 / (1 + ((x - xm2) / am)^2)  + H / (1 + ((x - xm3) / am2)^2)  + H / (1 + ((x - xm4) / am2)^2)
 end
 
 function hvspace_2D(
@@ -31,7 +39,7 @@ function hvspace_2D(
     xelem = 64,
     zelem = 32,
     npoly = 4,
-    warp_fn = no_warp,
+    warp_fn = warp_surface,
 )
     FT = Float64
     vertdomain = Domains.IntervalDomain(
@@ -150,6 +158,14 @@ function rhs_invariant!(dY, Y, _, t)
     cw = If2c.(fw)
     fuₕ = Ic2f.(cuₕ)
     cuw = Geometry.Covariant13Vector.(cuₕ) .+ Geometry.Covariant13Vector.(cw)
+    cuwᶜ = Geometry.Contravariant13Vector.(cuw)
+    cuwᶜ₁ = @. Geometry.project(Geometry.Contravariant1Axis(), cuwᶜ) 
+    cuwᶜ₂ = @. Geometry.project(Geometry.Contravariant3Axis(), cuwᶜ) 
+    cuwᶜ_bc = @. cuwᶜ₂ * -0
+    ubc = @. Geometry.Contravariant13Vector(cuwᶜ₁) +  Geometry.Contravariant13Vector(cuwᶜ_bc)
+    cubc = @. Geometry.Covariant3Vector(ubc)
+    @show maximum(parent(cubc))
+    @show minimum(parent(cubc))
 
     ce = @. cρe / cρ
     cI = @. ce - Φ(z) - (norm(cuw)^2) / 2
@@ -178,12 +194,12 @@ function rhs_invariant!(dY, Y, _, t)
 
     # 1.b) vertical divergence
     vdivf2c = Operators.DivergenceF2C(
-        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
+        top = Operators.SetValue(cubc),
+        bottom = Operators.SetValue(cubc),
     )
     vdivc2f = Operators.DivergenceC2F(
-        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
+        top = Operators.SetValue(cubc),
+        bottom = Operators.SetValue(cubc),
     )
     # we want the total u³ at the boundary to be zero: we can either constrain
     # both to be zero, or allow one to be non-zero and set the other to be its
@@ -221,8 +237,8 @@ function rhs_invariant!(dY, Y, _, t)
 
     @. duₕ -= hgrad(cp) / cρ
     vgradc2f = Operators.GradientC2F(
-        bottom = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
-        top = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
+        bottom = Operators.SetGradient(cubc),
+        top = Operators.SetGradient(cubc),
     )
     @. dw -= vgradc2f(cp) / Ic2f(cρ)
 
@@ -280,7 +296,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 # run!
 using OrdinaryDiffEq
 timeend = 900.0
-Δt = 0.3
+Δt = 0.25
 prob = ODEProblem(rhs_invariant!, Y, (0.0, timeend))
 integrator = OrdinaryDiffEq.init(
     prob,
@@ -326,6 +342,20 @@ anim = Plots.@animate for u in sol.u
     Plots.plot(u)
 end
 Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    e = u.Yc.ρe ./ u.Yc.ρ
+    uₕ = Geometry.UWVector.(Geometry.Covariant13Vector.(u.uₕ))
+    w = Geometry.UWVector.(Geometry.Covariant13Vector.(If2c.(u.w)))
+    uw = uₕ .+ w
+    z = Fields.coordinate_field(uₕ).z
+    I = @. e - Φ(z) - (norm(uw)^2) / 2
+    T = @. I / C_v + T_0
+    p = @. u.Yc.ρ * R_d * T
+    θ = @. (MSLP / p)^(R_d / C_p) * (T)
+    Plots.plot(θ)
+end
+Plots.mp4(anim, joinpath(path, "theta.mp4"), fps = 20)
 
 # post-processing
 Es = [sum(u.Yc.ρe) for u in sol.u]
