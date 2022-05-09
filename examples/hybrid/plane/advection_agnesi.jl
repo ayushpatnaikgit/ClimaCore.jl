@@ -340,13 +340,13 @@ function rhs!(dY, Y, params, t)
                 -(∂f(p)) - If(Yc.ρ) * ∂f(Φ(coords.z)),
             ) - vvdivc2f(Ic(ρw ⊗ w)),
         )
-#    # horizontal component of vertical momentum
-#    @. dYc.ρuₕ += @. Ic(BU(
-#            Geometry.project( # project
-#                Geometry.UAxis(),
-#                -(∂f(p)) - If(Yc.ρ) * ∂f(Φ(coords.z)),
-#            ),
-#        ))
+    # horizontal component of vertical momentum
+    @. dYc.ρuₕ += @. Ic(BU(
+            Geometry.project( # project
+                Geometry.UAxis(),
+                -(∂f(p)) - If(Yc.ρ) * ∂f(Φ(coords.z)),
+            ),
+        ))
 
     # vertical component of horizontal momentum
     uₕf = @. If(Yc.ρuₕ / Yc.ρ) # requires boundary conditions
