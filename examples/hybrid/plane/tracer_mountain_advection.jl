@@ -43,14 +43,14 @@ function warp_surface(coord)
   FT = eltype(x)
   a = 25000
   λ = 8000
-  h₀ = 2000
+  h₀ = 3000
 #  if abs(x) <= a
 #    h = h₀ * (cos(π*x/2/a))^2 * (cos(π*x/λ))^2
 #  else
 #    h = FT(0)
 #  end
-    if abs(x) <= 20h₀
-      zₛ= h₀ - abs(x/20)
+    if abs(x) <= 30h₀
+      zₛ= h₀ - abs(x/30)
     else
       zₛ= FT(0)
     end
@@ -97,7 +97,7 @@ function hvspace_2D(
 end
 
 # set up 2D domain - doubly periodic box
-hv_center_space, hv_face_space = hvspace_2D((-150000, 150000), (0, 25000))
+hv_center_space, hv_face_space = hvspace_2D((-100000, 100000), (0, 25000))
 
 Φ(z) = grav * z
 
@@ -149,7 +149,7 @@ function initial_velocity(x, z)
   else
     u = @. u₀ * sin(π/2 * (z-z₁)/(z₂-z₁))
   end
-  return @. Geometry.UWVector(FT(0), FT(0))
+  return @. Geometry.UWVector(u, FT(0))
 end
 
 # initial conditions
@@ -369,8 +369,8 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 1.00
-timeend = 1000.0
+Δt = 0.75
+timeend = 3000.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
