@@ -286,7 +286,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-timeend = 900.0
+timeend = 10.0
 Δt = 0.1
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
@@ -328,7 +328,9 @@ Plots.mp4(anim, joinpath(path, "total_energy.mp4"), fps = 20)
 
 If2c = Operators.InterpolateF2C()
 anim = Plots.@animate for u in sol.u
-    Plots.plot(Geometry.WVector.(Geometry.Covariant13Vector.(If2c.(u.w))))
+    ᶜuw = @. Geometry.Covariant13Vector(u.uₕ) + Geometry.Covariant13Vector(If2c(u.w))
+    ʷu = @. Geometry.project(Geometry.WAxis(), ᶜuw)
+    Plots.plot(ʷu)
 end
 Plots.mp4(anim, joinpath(path, "vel_w.mp4"), fps = 20)
 
