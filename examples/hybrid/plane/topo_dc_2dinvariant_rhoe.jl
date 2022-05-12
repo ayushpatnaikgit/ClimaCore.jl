@@ -22,7 +22,10 @@ global_logger(TerminalLogger())
 function no_warp(coord)
     x = Geometry.component(coord, 1)
     FT = eltype(x)
-    return FT(0) * x
+    xm = -6000
+    am = 1000
+    H = 1000
+    return H / (1 + ((x-xm)/am)^2)
 end
 
 function hvspace_2D(
@@ -102,7 +105,13 @@ function init_dry_density_current_2d(x, z)
     e = cv_d * (T - T_0) + Φ(z)
     ρe = ρ * e # total energy
 
-    return (ρ = ρ, ρe = ρe)
+    q = 0.0
+    if z >= 2000.0 && z<= 2500.0
+      q = 1.0
+    end
+    ρq = @. q * ρ
+
+    return (ρ = ρ, ρe = ρe. ρq = ρq)
 end
 
 # initial conditions
@@ -123,11 +132,13 @@ function rhs_invariant!(dY, Y, _, t)
     fw = Y.w # Covariant3Vector on faces
     cuₕ = Y.uₕ # Covariant1Vector on centers
     cρe = Y.Yc.ρe
+    cρe = Y.Yc.ρq
 
     dρ = dY.Yc.ρ
     dw = dY.w
     duₕ = dY.uₕ
     dρe = dY.Yc.ρe
+    dρq = dY.Yc.ρq
     z = coords.z
 
     # 0) update w at the bottom
@@ -235,6 +246,11 @@ function rhs_invariant!(dY, Y, _, t)
     @. dρe -= hdiv(cuw * (cρe + cp))
     @. dρe -= vdivf2c(fw * Ic2f(cρe + cp))
     @. dρe -= vdivf2c(Ic2f(cuₕ * (cρe + cp)))
+    
+    # 4) tracer
+    @. dρq -= hdiv(cuw * (cρq))
+    @. dρq -= vdivf2c(fw * Ic2f(cρq))
+    @. dρq -= vdivf2c(Ic2f(cuₕ * (cρq)))
 
     # Uniform 2nd order diffusion
     ∂c = Operators.GradientF2C()
@@ -301,7 +317,7 @@ ENV["GKSwstype"] = "nul"
 import Plots, ClimaCorePlots
 Plots.GRBackend()
 
-dir = "dc_invariant_etot_no_warp"
+dir = "dc_invariant_etot_warped_tracer"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
