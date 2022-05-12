@@ -527,7 +527,7 @@ anim = Plots.@animate for u in sol.u
     p2 = Plots.plot(duₕ2) # Make a line plot
     p3 = Plots.plot(duₕ3) # Make a line plot
     p4 = Plots.plot(duₕ4) # Make a line plot
-    Plots.plot(p1, p2, p3, p4, layout = (2, 2), legend = false, size = (900,900))
+    Plots.plot(p1, p2, p3, p4, layout = (2, 2), legend = false, size = (600,600))
 end
 Plots.mp4(anim, joinpath(path, "tendency_uh.mp4"), fps = 20)
 
@@ -636,7 +636,7 @@ anim = Plots.@animate for u in sol.u
     p2 = Plots.plot(dw2) # Make a line plot
     p3 = Plots.plot(dw3) # Make a line plot
     p4 = Plots.plot(dw4) # Make a line plot
-    Plots.plot(p1, p2, p3, p4, layout = (2, 2), legend = false, size = (900,900))
+    Plots.plot(p1, p2, p3, p4, layout = (2, 2), legend = false, size = (600,600))
 end
 Plots.mp4(anim, joinpath(path, "tendency_w.mp4"), fps = 20)
 
