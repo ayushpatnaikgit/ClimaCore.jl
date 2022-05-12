@@ -431,8 +431,114 @@ anim = Plots.@animate for u in sol.u
     cρq = Y.Yc.ρq
     z = coords.z
 
-    # 0) update w at the bottom
-    # fw = -g^31 cuₕ/ g^33
+    hdiv = Operators.Divergence()
+    hwdiv = Operators.WeakDivergence()
+    hgrad = Operators.Gradient()
+    hwgrad = Operators.WeakGradient()
+    hcurl = Operators.Curl()
+
+    If2c = Operators.InterpolateF2C()
+    Ic2f = Operators.InterpolateC2F(
+        bottom = Operators.Extrapolate(),
+        top = Operators.Extrapolate(),
+    )
+
+    # 1.b) vertical divergence
+    vdivf2c = Operators.DivergenceF2C(
+        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
+        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
+    )
+    vdivc2f = Operators.DivergenceC2F(
+        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
+        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
+    )
+    vgradc2f = Operators.GradientC2F(
+        bottom = Operators.SetGradient(Geometry.Contravariant3Vector(0.0)),
+        top = Operators.SetGradient(Geometry.Contravariant3Vector(0.0)),
+    )
+    # curl term
+    hcurl = Operators.Curl()
+    # effectively a homogeneous Neumann condition on u₁ at the boundary
+    vcurlc2f = Operators.CurlC2F(
+        bottom = Operators.SetCurl(Geometry.Contravariant2Vector(0.0)),
+        top = Operators.SetCurl(Geometry.Contravariant2Vector(0.0)),
+    )
+
+    cw = @. If2c(fw)
+    fuₕ = @. Ic2f(cuₕ)
+    cuw = Geometry.Covariant13Vector.(cuₕ) .+ Geometry.Covariant13Vector.(cw)
+    ce = @. cρe / cρ
+    cq = @. cρq / cρ
+    cI = @. ce - Φ(z) - (norm(cuw)^2) / 2
+    cT = @. cI / C_v + T_0
+    cpressure = @. cρ * R_d * cT
+    h_tot = @. ce + cpressure / cρ # Total enthalpy at cell centers
+    #######################################  
+
+    χe = @. hwdiv(hgrad(h_tot)) 
+    χuₕ = @. hwgrad(hdiv(cuw))
+    χq = @. hwdiv(hgrad(cq)) 
+    Spaces.weighted_dss!(χe)
+    Spaces.weighted_dss!(χuₕ)
+    Spaces.weighted_dss!(χq)
+    κ₄_dynamic = hyperdiffusivity 
+    κ₄_tracer = hyperdiffusivity * 0
+    dρeh = @. -κ₄_dynamic * hwdiv(cρ * hgrad(χe))
+    dρqh = @. -κ₄_tracer * hwdiv(cρ * hgrad(χq))
+    duₕh = @. -κ₄_dynamic * (hwgrad(hdiv(χuₕ)))
+
+
+    fuw = @. Geometry.Covariant13Vector(fuₕ) + Geometry.Covariant13Vector(fw)
+    fω² = hcurl.(fw)
+    fω² .+= vcurlc2f.(cuₕ)
+    
+    fu¹ = Geometry.project.(Ref(Geometry.Contravariant1Axis()), fuw)
+    fu³ = Geometry.project.(Ref(Geometry.Contravariant3Axis()), fuw)
+
+    cE1 = @. (norm(cuw)^2) / 2 
+    cE2 = @.  Φ(z)
+    
+    dρ1 = @. hdiv.(cρ .* (cuw))
+    dρ2 = @. vdivf2c.(Ic2f.(cρ .* cuₕ))
+    dρ3 = @. vdivf2c.(Ic2f.(cρ) .* fw)
+
+    duₕ1 = @. -If2c(fω² × fu³)
+    duₕ2 = @. -hgrad(cpressure) / cρ
+    duₕ3 = @. -hgrad(cE1)
+    duₕ4 = @. -hgrad(cE2)
+    
+    dw1 = @. -fω² × fu¹ # Covariant3Vector on faces
+    dw2 = @. -vgradc2f(cpressure) / Ic2f(cρ)
+    dw3 = @. -vgradc2f(cE1)
+    dw4 = @. -vgradc2f(cE2)
+
+    dρe1 = @. -hdiv(cuw * cρe)
+    dρe2 = @. -hdiv(cuw * cpressure)
+    dρe3 = @. -vdivf2c(fw * Ic2f(cρe))
+    dρe4 = @. -vdivf2c(fw * Ic2f(cpressure))
+    dρe5 = @. -vdivf2c(Ic2f(cuₕ * cρe))
+    dρe6 = @. -vdivf2c(Ic2f(cuₕ * cpressure))
+    
+    dρq1 = @. -hdiv(cuw * (cρq))
+    dρq2 = @. -vdivf2c(fw * Ic2f(cρq))
+    dρq3 = @. -vdivf2c(Ic2f(cuₕ * (cρq)))
+    
+    p1 = Plots.plot(duₕ1) # Make a line plot
+    p2 = Plots.plot(duₕ2) # Make a line plot
+    p3 = Plots.plot(duₕ3) # Make a line plot
+    p4 = Plots.plot(duₕ4) # Make a line plot
+    Plots.plot(p1, p2, p3, p4, layout = (2, 2), legend = false, size = (900,900))
+end
+Plots.mp4(anim, joinpath(path, "tendency_uh.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    Y = u;
+    cρ = Y.Yc.ρ # scalar on centers
+    fw = Y.w # Covariant3Vector on faces
+    cuₕ = Y.uₕ # Covariant1Vector on centers
+    cρe = Y.Yc.ρe
+    cρq = Y.Yc.ρq
+    z = coords.z
 
     hdiv = Operators.Divergence()
     hwdiv = Operators.WeakDivergence()
@@ -510,10 +616,10 @@ anim = Plots.@animate for u in sol.u
     duₕ3 = @. -hgrad(cE1)
     duₕ4 = @. -hgrad(cE2)
     
-    dw2 = @. -fω² × fu¹ # Covariant3Vector on faces
-    dw3 = @. -vgradc2f(cpressure) / Ic2f(cρ)
-    dw4 = @. -vgradc2f(cE1)
-    dw5 = @. -vgradc2f(cE2)
+    dw1 = @. -fω² × fu¹ # Covariant3Vector on faces
+    dw2 = @. -vgradc2f(cpressure) / Ic2f(cρ)
+    dw3 = @. -vgradc2f(cE1)
+    dw4 = @. -vgradc2f(cE2)
 
     dρe1 = @. -hdiv(cuw * cρe)
     dρe2 = @. -hdiv(cuw * cpressure)
@@ -525,9 +631,14 @@ anim = Plots.@animate for u in sol.u
     dρq1 = @. -hdiv(cuw * (cρq))
     dρq2 = @. -vdivf2c(fw * Ic2f(cρq))
     dρq3 = @. -vdivf2c(Ic2f(cuₕ * (cρq)))
-    Plots.plot(dρe2)
+    
+    p1 = Plots.plot(dw1) # Make a line plot
+    p2 = Plots.plot(dw2) # Make a line plot
+    p3 = Plots.plot(dw3) # Make a line plot
+    p4 = Plots.plot(dw4) # Make a line plot
+    Plots.plot(p1, p2, p3, p4, layout = (2, 2), legend = false, size = (900,900))
 end
-Plots.mp4(anim, joinpath(path, "tendency.mp4"), fps = 20)
+Plots.mp4(anim, joinpath(path, "tendency_w.mp4"), fps = 20)
 
 # post-processing
 Es = [sum(u.Yc.ρe) for u in sol.u]
