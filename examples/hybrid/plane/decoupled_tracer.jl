@@ -97,7 +97,7 @@ hv_center_space, hv_face_space = hvspace_2D((-100000, 100000), (0, 25000))
 Φ(z) = grav * z
     
 const z₁ = 4000.0
-const z₂ = 8000.0
+const z₂ = 5000.0
 
 # Reference: https://journals.ametsoc.org/view/journals/mwre/140/4/mwr-d-10-05073.1.xml, Section 5a
 # Prognostic thermodynamic variable: Total Energy 
