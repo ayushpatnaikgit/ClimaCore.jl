@@ -36,7 +36,7 @@ const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
 const kinematic_viscosity = 0.0 #m²/s
-const hyperdiffusivity = 23571*1.0 #m²/s
+const hyperdiffusivity = 1e8*1.0 #m²/s
 const uᵢ = 10.0
  
 function warp_surface(coord)   
@@ -55,8 +55,8 @@ end
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 100,
-    zelem = 100,
+    xelem = 50,
+    zelem = 50,
     npoly = 4,
     warp_fn = warp_surface,
 )
@@ -127,7 +127,7 @@ function init_advection_over_mountain(x, z)
 
     #x₀ = -50000.0
     x₀ = -11000.0
-    z₀ = 9000.0
+    z₀ = 11000.0
     A_x = 25000.0
     A_z = 3000.0
     r = @. sqrt((x-x₀)^2/A_x^2 + (z-z₀)^2/A_z^2)
@@ -227,7 +227,7 @@ function rhs_invariant!(dY, Y, _, t)
         top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
         bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
     )
-    vdivc2f = Operators.DivergenceC2F(
+    u_vdivc2f = Operators.DivergenceC2F(
         top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
         bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
     )
@@ -324,9 +324,9 @@ function rhs_invariant!(dY, Y, _, t)
 #    # Pressure gradients are assumed to be held constant by the initial 
 #    # velocity / energy profiles
 #    ### DEBUG TENDENCIES
-     # @. duₕ *= 0.0  #(1)
-     # @. dw *= 0.0   #(2)
-     # @. dρe *= 0.0   #(3)
+      @. duₕ *= 0.0  #(1)
+      @. dw *= 0.0   #(2)
+      @. dρe *= 0.0   #(3)
      # @. dρ *= 0.0   #(4)
     #  @. dρq *= 0.0   #(5)
 
@@ -342,7 +342,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.15
+Δt = 0.50
 timeend = 2250.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
@@ -376,6 +376,11 @@ Plots.GRBackend()
 dir = "tracer_decoupled_debug"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
+
+anim = Plots.@animate for u in sol.u
+    Plots.plot(u.Yc.ρ)
+end
+Plots.mp4(anim, joinpath(path, "density.mp4"), fps = 20)
 
 anim = Plots.@animate for u in sol.u
     Plots.plot(u.Yc.ρe ./ u.Yc.ρ)
