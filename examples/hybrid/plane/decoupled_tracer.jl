@@ -37,7 +37,10 @@ const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
 const kinematic_viscosity = 0.0 #m²/s
 const hyperdiffusivity = 1e8*1.0 #m²/s
-const uᵢ = 10.0
+const uᵢ = 20.0
+    
+const z₁ = 4000.0
+const z₂ = 5000.0
  
 function warp_surface(coord)   
   x = Geometry.component(coord,1)
@@ -45,18 +48,24 @@ function warp_surface(coord)
   a = 25000
   λ = 8000
   h₀ = 3000
-  if abs(x) <= a
-    h = h₀ * (cos(π*x/2/a))^2 * (cos(π*x/λ))^2
+#  if abs(x) <= a
+#    h = h₀ * (cos(π*x/2/a))^2 * (cos(π*x/λ))^2
+#  else
+#    h = FT(0)
+#  end
+  if abs(x) <= 2*h₀
+    h = h₀ - 1/2 * abs(x)
   else
     h = FT(0)
   end
+  return h 
 end
 
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 50,
-    zelem = 50,
+    xelem = 20,
+    zelem = 40,
     npoly = 4,
     warp_fn = warp_surface,
 )
@@ -95,9 +104,18 @@ end
 hv_center_space, hv_face_space = hvspace_2D((-100000, 100000), (0, 25000))
 
 Φ(z) = grav * z
-    
-const z₁ = 4000.0
-const z₂ = 5000.0
+
+function assign_velocity(z)
+    FT = eltype(z)
+    if z <= FT(z₁)
+      u = FT(0)
+    elseif z >= FT(z₂)
+      u = FT(uᵢ)
+    else
+      u = FT(uᵢ) * (sinpi(0.5 * (z - z₁) / (z₂ - z₁)))^2
+    end
+    return u
+end
 
 # Reference: https://journals.ametsoc.org/view/journals/mwre/140/4/mwr-d-10-05073.1.xml, Section 5a
 # Prognostic thermodynamic variable: Total Energy 
@@ -113,17 +131,12 @@ function init_advection_over_mountain(x, z)
     T = π_exn * θ_b # temperature
     p = p_0 * π_exn^(cp_d / R_d) # pressure
     ρ = p / R_d / T # density
-    u = FT(0)
-    if z <= FT(z₁)
-      u = FT(0)
-    elseif z >= FT(z₂)
-      u = FT(uᵢ)
-    else
-      u = FT(uᵢ) * sinpi(0.5 * (z - z₁) / (z₂ - z₁))
-    end
-    K = FT(0.5) * (u^2)
-    e = cv_d * (T - T_0) + g * z  + K 
-    ρe = ρ * e # total energy
+
+    u = @. assign_velocity(z)
+
+    K = @. FT(0.5) * (u^2)
+    e = @. cv_d * (T - T_0) + g * z  + K 
+    ρe = @. ρ * e # total energy
 
     #x₀ = -50000.0
     x₀ = -11000.0
@@ -131,12 +144,11 @@ function init_advection_over_mountain(x, z)
     A_x = 25000.0
     A_z = 3000.0
     r = @. sqrt((x-x₀)^2/A_x^2 + (z-z₀)^2/A_z^2)
-    q₀ = 1.0
-  
+    q₀ = @. 1.0
     if r <= 1
-      q = q₀ * (cos(π*r/2))^2 
+      q = @. q₀ * (cos(π*r/2))^2 
     else
-      q = eltype(x)(q₀) * 0
+      q = @. eltype(x)(q₀) * 0
     end
     ρq = @. ρ * q
     return (ρ = ρ,
@@ -146,13 +158,7 @@ end
 
 function initial_velocity(x, z)
   FT = eltype(x)
-  if z<=z₁
-    u = @. FT(0)
-  elseif z >= z₂
-    u = @. uᵢ
-  else
-    u = @. uᵢ * sin(π/2 * (z-z₁)/(z₂-z₁))
-  end
+  u = @. assign_velocity(z)
   return @. Geometry.UWVector(u, FT(0))
 end
 
@@ -227,7 +233,11 @@ function rhs_invariant!(dY, Y, _, t)
         top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
         bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
     )
-    u_vdivc2f = Operators.DivergenceC2F(
+    uvdivf2c = Operators.DivergenceF2C(
+        top = Operators.Extrapolate(),
+        bottom = Operators.Extrapolate()
+    )
+    wvdivf2c = Operators.DivergenceF2C(
         top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
         bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
     )
@@ -274,7 +284,7 @@ function rhs_invariant!(dY, Y, _, t)
     dw .= fw .* 0
     # 1.a) horizontal divergence
     dρ .-= hdiv.(cρ .* (cuw))
-    dρ .-= vdivf2c.(Ic2f.(cρ .* cuₕ))
+    dρ .-= uvdivf2c.(Ic2f.(cρ .* cuₕ))
     dρ .-= vdivf2c.(Ic2f.(cρ) .* fw)
 
 ##    # 2) Momentum equation
@@ -342,7 +352,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.50
+Δt = 1.00
 timeend = 2250.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
@@ -373,7 +383,7 @@ ENV["GKSwstype"] = "nul"
 import Plots, ClimaCorePlots
 Plots.GRBackend()
 
-dir = "tracer_decoupled_debug"
+dir = "tracer_decoupled_debug_lowres_dmid"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
@@ -404,8 +414,11 @@ Plots.mp4(anim, joinpath(path, "vel_w.mp4"), fps = 20)
 anim = Plots.@animate for u in sol.u
     ᶜuw = @. Geometry.Covariant13Vector(u.uₕ) +
        Geometry.Covariant13Vector(If2c(u.w))
-    u = @. Geometry.project(Geometry.UAxis(), ᶜuw)
-    Plots.plot(u)
+
+       ᶜuw = @. Geometry.project(Geometry.UAxis(), Geometry.Covariant13Vector(u.uₕ)) + Geometry.project(Geometry.UAxis(), Geometry.Covariant13Vector(If2c(u.w)))
+
+    u = @. Geometry.UWVector(ᶜuw)
+    Plots.plot(Geometry.UVector.(u))
 end
 Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
 
@@ -448,10 +461,6 @@ anim = Plots.@animate for u in sol.u
 
     # 1.b) vertical divergence
     vdivf2c = Operators.DivergenceF2C(
-        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-    )
-    vdivc2f = Operators.DivergenceC2F(
         top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
         bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
     )
@@ -556,14 +565,6 @@ anim = Plots.@animate for u in sol.u
     )
 
     # 1.b) vertical divergence
-    vdivf2c = Operators.DivergenceF2C(
-        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-    )
-    vdivc2f = Operators.DivergenceC2F(
-        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-    )
     vgradc2f = Operators.GradientC2F(
         bottom = Operators.SetGradient(Geometry.Contravariant3Vector(0.0)),
         top = Operators.SetGradient(Geometry.Contravariant3Vector(0.0)),
@@ -666,10 +667,6 @@ anim = Plots.@animate for u in sol.u
 
     # 1.b) vertical divergence
     vdivf2c = Operators.DivergenceF2C(
-        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-        bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
-    )
-    vdivc2f = Operators.DivergenceC2F(
         top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
         bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
     )
