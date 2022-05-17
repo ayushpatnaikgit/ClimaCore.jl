@@ -40,7 +40,7 @@ const hyperdiffusivity = 1e8*1.0 #m²/s
 const uᵢ = 20.0
     
 const z₁ = 4000.0
-const z₂ = 10000.0
+const z₂ = 5000.0
  
 function warp_surface(coord)   
   x = Geometry.component(coord,1)
@@ -53,8 +53,9 @@ function warp_surface(coord)
 #  else
 #    h = FT(0)
 #  end
-  if abs(x) <= 2*h₀
-    h = h₀ - 1/2 * abs(x)
+
+  if abs(x) <= 10*h₀
+    h = h₀ - 1/10 * abs(x)
   else
     h = FT(0)
   end
@@ -404,16 +405,14 @@ Plots.mp4(anim, joinpath(path, "tracer.mp4"), fps = 20)
 
 If2c = Operators.InterpolateF2C()
 anim = Plots.@animate for u in sol.u
-    ᶜuw = @. Geometry.project(Geometry.WAxis(), u.uₕ) 
-    + Geometry.project(Geometry.WAxis(), If2c(u.w))
+    ᶜuw = @. Geometry.project(Geometry.WAxis(), u.uₕ) + Geometry.project(Geometry.WAxis(), If2c(u.w))
     u = @. Geometry.UVector(ᶜuw)
     Plots.plot(u)
 end
 Plots.mp4(anim, joinpath(path, "vel_w.mp4"), fps = 20)
 
 anim = Plots.@animate for u in sol.u
-    ᶜuw = @. Geometry.project(Geometry.UAxis(), u.uₕ) 
-    + Geometry.project(Geometry.UAxis(), If2c(u.w))
+    ᶜuw = @. Geometry.project(Geometry.UAxis(), u.uₕ) + Geometry.project(Geometry.UAxis(), If2c(u.w))
     u = @. Geometry.UVector(ᶜuw)
     Plots.plot(u)
 end
