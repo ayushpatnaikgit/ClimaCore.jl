@@ -36,7 +36,8 @@ const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
 const kinematic_viscosity = 0.0 #m²/s
-const hyperdiffusivity = 1e8*1.0 #m²/s
+const hyperdiffusivity = 23571*1.0 #m²/s
+const uᵢ = 10.0
  
 function warp_surface(coord)   
   x = Geometry.component(coord,1)
@@ -54,8 +55,8 @@ end
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 10,
-    zelem = 50,
+    xelem = 100,
+    zelem = 100,
     npoly = 4,
     warp_fn = warp_surface,
 )
@@ -94,6 +95,9 @@ end
 hv_center_space, hv_face_space = hvspace_2D((-100000, 100000), (0, 25000))
 
 Φ(z) = grav * z
+    
+const z₁ = 4000.0
+const z₂ = 8000.0
 
 # Reference: https://journals.ametsoc.org/view/journals/mwre/140/4/mwr-d-10-05073.1.xml, Section 5a
 # Prognostic thermodynamic variable: Total Energy 
@@ -109,9 +113,6 @@ function init_advection_over_mountain(x, z)
     T = π_exn * θ_b # temperature
     p = p_0 * π_exn^(cp_d / R_d) # pressure
     ρ = p / R_d / T # density
-    uᵢ = 10.0
-    z₁ = 4000.0
-    z₂ = 5000.0
     u = FT(0)
     if z <= FT(z₁)
       u = FT(0)
@@ -145,9 +146,6 @@ end
 
 function initial_velocity(x, z)
   FT = eltype(x)
-  uᵢ = 10.0
-  z₁ = 4000.0
-  z₂ = 5000.0
   if z<=z₁
     u = @. FT(0)
   elseif z >= z₂
@@ -326,10 +324,10 @@ function rhs_invariant!(dY, Y, _, t)
 #    # Pressure gradients are assumed to be held constant by the initial 
 #    # velocity / energy profiles
 #    ### DEBUG TENDENCIES
-      @. duₕ *= 0.0  #(1)
-      @. dw *= 0.0   #(2)
-      @. dρe *= 0.0   #(3)
-      @. dρ *= 0.0   #(4)
+     # @. duₕ *= 0.0  #(1)
+     # @. dw *= 0.0   #(2)
+     # @. dρe *= 0.0   #(3)
+     # @. dρ *= 0.0   #(4)
     #  @. dρq *= 0.0   #(5)
 
     Spaces.weighted_dss!(dY.Yc)
@@ -344,8 +342,8 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.75
-timeend = 1500.0
+Δt = 0.15
+timeend = 2250.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
