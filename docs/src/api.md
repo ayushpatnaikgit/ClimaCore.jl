@@ -108,6 +108,7 @@ Meshes.SharedVertices
 Meshes.face_connectivity_matrix
 Meshes.vertex_connectivity_matrix
 Meshes.linearindices
+Meshes.lengthscale
 ```
 
 ## Topologies
@@ -162,6 +163,10 @@ the other space from the original one: this internally reuses the same data stru
 ### Spectral Element Spaces
 
 [Introduction to the Finite/Spectral Element Method](intro-to-sem.md)
+
+```@docs
+Spaces.lengthscale
+```
 
 ### Quadratures
 

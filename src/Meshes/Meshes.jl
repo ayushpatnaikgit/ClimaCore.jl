@@ -104,7 +104,12 @@ The element and face (`opelem`, `opface`) that oppose face `face` of element `el
 """
 function opposing_face end
 
+"""
+    Meshes.lengthscale(mesh::AbstractMesh)
 
+The approximate lengthscale of the elements of the mesh.
+"""
+function lengthscale end
 
 include("common.jl")
 include("interval.jl")

@@ -50,6 +50,12 @@ meshes = [
           CartesianIndices((2, 3))
 end
 
+@testset "lengthscale" begin
+    for mesh in meshes
+        @test Meshes.lengthscale(mesh) ≈ sqrt(1 / Meshes.nelements(mesh))
+    end
+end
+
 @testset "opposing face" begin
     for mesh in meshes
         for elem in Meshes.elements(mesh)

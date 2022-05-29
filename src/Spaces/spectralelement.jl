@@ -24,6 +24,19 @@ topology(space::AbstractSpectralElementSpace) = space.topology
 quadrature_style(space::AbstractSpectralElementSpace) = space.quadrature_style
 
 """
+    Spaces.lengthscale(space::AbstractSpectralElementSpace)
+
+The approximate length scale of the discrete space. This is defined as the
+length scale of the mesh (see [`Meshes.lengthscale`](@ref)), divided by the
+number of unique quadrature points along each dimension.
+"""
+function lengthscale(space::AbstractSpectralElementSpace)
+    quad = quadrature_style(space)
+    Nu = Quadratures.unique_degrees_of_freedom(quad)
+    return Meshes.lengthscale(space.topology.mesh) / Nu
+end
+
+"""
     SpectralElementSpace1D <: AbstractSpace
 
 A one-dimensional space: within each element the space is represented as a polynomial.
