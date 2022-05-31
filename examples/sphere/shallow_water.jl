@@ -360,7 +360,7 @@ function rhs!(dYdt, y, parameters, t)
 
     space = axes(y)
     c = sqrt(g * h0)
-    D₄ = 0.0015 * c * Spaces.lengthscale(space)^3 # hyperdiffusion coefficient
+    D₄ = 0.0015 * c * Spaces.node_length_scale(space)^3 # hyperdiffusion coefficient
 
     div = Operators.Divergence()
     wdiv = Operators.WeakDivergence()

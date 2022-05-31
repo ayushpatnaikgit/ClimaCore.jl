@@ -111,7 +111,7 @@ end
 function rhs!(dydt, y, _, t)
     space = axes(y)
     c = sqrt(parameters.g * parameters.ρ₀)
-    D₄ = 0.0015 * c * Spaces.lengthscale(space)^3 # hyperdiffusion coefficient
+    D₄ = 0.0015 * c * Spaces.node_length_scale(space)^3 # hyperdiffusion coefficient
 
     g = parameters.g
 

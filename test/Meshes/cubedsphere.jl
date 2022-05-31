@@ -80,7 +80,7 @@ end
                     end
                 end
             end
-            @test Meshes.lengthscale(mesh) ≈
+            @test Meshes.element_length_scale(mesh) ≈
                   sqrt((4pi * 5^2) / Meshes.nelements(mesh))
         end
     end

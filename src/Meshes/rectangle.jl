@@ -30,8 +30,10 @@ domain(mesh::RectilinearMesh) =
 nelements(mesh::RectilinearMesh) =
     nelements(mesh.intervalmesh1) * nelements(mesh.intervalmesh2)
 
-lengthscale(mesh::RectilinearMesh) =
-    sqrt(lengthscale(mesh.intervalmesh1) * lengthscale(mesh.intervalmesh2))
+element_length_scale(mesh::RectilinearMesh) = sqrt(
+    element_length_scale(mesh.intervalmesh1) *
+    element_length_scale(mesh.intervalmesh2),
+)
 function elements(mesh::RectilinearMesh)
     # we use the Base Julia CartesianIndices object to index elements in the mesh
     CartesianIndices((

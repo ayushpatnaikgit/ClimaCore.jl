@@ -50,9 +50,10 @@ meshes = [
           CartesianIndices((2, 3))
 end
 
-@testset "lengthscale" begin
+@testset "element_length_scale" begin
     for mesh in meshes
-        @test Meshes.lengthscale(mesh) ≈ sqrt(1 / Meshes.nelements(mesh))
+        @test Meshes.element_length_scale(mesh) ≈
+              sqrt(1 / Meshes.nelements(mesh))
     end
 end
 
