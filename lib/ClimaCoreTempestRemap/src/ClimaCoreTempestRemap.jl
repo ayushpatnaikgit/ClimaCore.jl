@@ -6,7 +6,7 @@ export def_time_coord, def_space_coord
 
 
 import ClimaCore
-using ClimaCore: Geometry, Meshes, Domains, Topologies, Spaces, Fields
+using ClimaCore: Geometry, Meshes, Domains, Topologies, Spaces, Fields, Hypsography
 
 using NCDatasets, Dates, PkgVersion, LinearAlgebra, TempestRemap_jll
 
