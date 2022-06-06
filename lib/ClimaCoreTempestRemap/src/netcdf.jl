@@ -222,15 +222,31 @@ function def_space_coord(nc::NCDataset, space::Spaces.FaceFiniteDifferenceSpace)
     return (z_half,)
 end
 
+#function def_space_coord(
+#    nc::NCDataset,
+#    space::Spaces.ExtrudedFiniteDifferenceSpace{S};
+#    type = "dgll",
+#) where {S <: Spaces.Staggering}
+#    hvar = def_space_coord(nc, space.horizontal_space; type = type)
+#    vvar = def_space_coord(
+#        nc,
+#        Spaces.FiniteDifferenceSpace{S}(space.vertical_topology),
+#    )
+#    (hvar..., vvar...)
+#end
+
+"""
+  Special method for warped surfaces
+"""
 function def_space_coord(
     nc::NCDataset,
-    space::Spaces.ExtrudedFiniteDifferenceSpace{S};
+    space::Spaces.ExtrudedFiniteDifferenceSpace;
     type = "dgll",
-) where {S <: Spaces.Staggering}
+)
     hvar = def_space_coord(nc, space.horizontal_space; type = type)
     vvar = def_space_coord(
         nc,
-        Spaces.FiniteDifferenceSpace{S}(space.vertical_topology),
+        Spaces.CenterFiniteDifferenceSpace(space.vertical_topology.topology)
     )
     (hvar..., vvar...)
 end
