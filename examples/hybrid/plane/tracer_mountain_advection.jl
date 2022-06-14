@@ -36,7 +36,7 @@ const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
 const kinematic_viscosity = 0.0 #m²/s
-const hyperdiffusivity = 1e8*1.0 #m²/s
+const hyperdiffusivity = 1e10*1.0 #m²/s
  
 function warp_surface(coord)   
   x = Geometry.component(coord,1)
@@ -117,12 +117,12 @@ function init_advection_over_mountain(x, z)
     A_x = 25000.0
     A_z = 3000.0
     r = @. sqrt((x-x₀)^2/A_x^2 + (z-z₀)^2/A_z^2)
-    q₀ = 0.0
+    q₀ = 1.0
   
     if r <= 1
-      q = q₀ #* (cos(π*r/2))^2 
+      q = q₀ * (cos(π*r/2))^2 
     else
-      q = eltype(x)(q₀) #* 0
+      q = eltype(x)(q₀)
     end
       
     ρq = @. ρ * q
@@ -158,7 +158,7 @@ w = map(_ -> Geometry.Covariant3Vector(0.0), face_coords)
 uₕ_local = map(coord -> initial_velocity(coord.x, coord.z), coords)
 uₕ = Geometry.Covariant1Vector.(uₕ_local)
 
-const u₀ = uₕ
+const u_init = uₕ
 
 ᶜlg = Fields.local_geometry_field(hv_center_space)
 ᶠlg = Fields.local_geometry_field(hv_face_space)
@@ -280,18 +280,13 @@ function rhs_invariant!(dY, Y, _, t)
     fω¹ = hcurl.(fw)
     fω¹ .+= vcurlc2f.(cuₕ)
     
-    fω² = hcurl.(cuₕ)
-    @show fω²
-    
     # cross product
     # convert to contravariant
     # these will need to be modified with topography
-    fu¹ = @. Geometry.project(Geometry.Contravariant1Axis(), Ic2f(cuₕ)) + Geometry.project(Geometry.Contravariant1Axis(), w) 
+    fu¹ = @. Geometry.project(Geometry.Contravariant1Axis(), Ic2f(cuₕ)) #+ Geometry.project(Geometry.Contravariant1Axis(), w) 
     fu³ = @. Geometry.project(Geometry.Contravariant3Axis(), Ic2f(cuₕ)) + Geometry.project(Geometry.Contravariant3Axis(), w)  
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
     @. duₕ -= If2c(fω¹ × fu³)
-    #@. duₕ -=  fω² × fu¹
-
 
     @. duₕ -= hgrad(cp) / cρ
     vgradc2f = Operators.GradientC2F(
@@ -350,10 +345,12 @@ function rhs_invariant!(dY, Y, _, t)
     @. dfw += vκ₂∇²w
     @. dρe += hκ₂∇²h_tot
     @. dρe += vκ₂∇²h_tot
+    @. dρq += hκ₂∇²q
+    @. dρq += vκ₂∇²q
 
     # Sponge tendency
     β = @. rayleigh_sponge(z)
-    @. duₕ -= β * (uₕ - u₀)
+    @. duₕ -= β * (uₕ - u_init)
     @. dw -= Ic2f(β) * fw
 
     Spaces.weighted_dss!(dY.Yc)
@@ -369,7 +366,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 # run!
 using OrdinaryDiffEq
 Δt = 1.00
-timeend = 5000.0
+timeend = 4000.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
