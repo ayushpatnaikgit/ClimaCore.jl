@@ -36,7 +36,7 @@ const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
 const kinematic_viscosity = 0.0 #m²/s
-const hyperdiffusivity = 1e10*1.0 #m²/s
+const hyperdiffusivity = 98000*1.0 #m²/s
  
 function warp_surface(coord)   
   x = Geometry.component(coord,1)
@@ -141,7 +141,7 @@ function initial_velocity(x, z)
   elseif z >= z₂
     u = @. u₀
   else
-    u = @. u₀ * sin(π/2 * (z-z₁)/(z₂-z₁))
+    u = @. u₀ * (sin(π/2 * (z-z₁)/(z₂-z₁)))^2
   end
   return @. Geometry.UWVector(u, FT(0))
 end
@@ -164,6 +164,11 @@ const u_init = uₕ
 ᶠlg = Fields.local_geometry_field(hv_face_space)
 
 Y = Fields.FieldVector(Yc = Yc, uₕ = uₕ, w = w)
+
+Spaces.weighted_dss!(Y.Yc)
+Spaces.weighted_dss!(Y.uₕ)
+Spaces.weighted_dss!(Y.w)
+Spaces.weighted_dss!(u_init)
 
 energy_0 = sum(Y.Yc.ρe)
 mass_0 = sum(Y.Yc.ρ)
@@ -212,6 +217,12 @@ function rhs_invariant!(dY, Y, _, t)
         bottom = Operators.Extrapolate(),
         top = Operators.Extrapolate(),
     )
+    
+  f_upwind_product1 = Operators.UpwindBiasedProductC2F()
+  f_upwind_product3 = Operators.Upwind3rdOrderBiasedProductC2F(
+      bottom = Operators.FirstOrderOneSided(),
+      top = Operators.FirstOrderOneSided(),
+  )
 
     dρ .= 0 .* cρ
 
@@ -283,8 +294,8 @@ function rhs_invariant!(dY, Y, _, t)
     # cross product
     # convert to contravariant
     # these will need to be modified with topography
-    fu¹ = @. Geometry.project(Geometry.Contravariant1Axis(), Ic2f(cuₕ)) #+ Geometry.project(Geometry.Contravariant1Axis(), w) 
-    fu³ = @. Geometry.project(Geometry.Contravariant3Axis(), Ic2f(cuₕ)) + Geometry.project(Geometry.Contravariant3Axis(), w)  
+    fu¹ = @. Geometry.project(Geometry.Contravariant1Axis(), Ic2f(cuₕ)) 
+    fu³ = @. Geometry.project(Geometry.Contravariant3Axis(), Ic2f(cw)) 
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
     @. duₕ -= If2c(fω¹ × fu³)
 
@@ -302,7 +313,11 @@ function rhs_invariant!(dY, Y, _, t)
     # 3) total energy
 
     @. dρe -= hdiv(cuw * (cρe + cp))
-    @. dρe -= vdivf2c(fw * Ic2f(cρe + cp))
+    #@. dρe -= vdivf2c(fw * Ic2f(cρe + cp))
+    
+    @. dρe -= vdivf2c(Ic2f(cρ) * f_upwind_product1(fw, (cρe + cp)/cρ)) # Upwind Approximation - First Order
+    #@. dρe -= vdivf2c(Ic2f(cρ) * f_upwind_product3(fw, (cρe + cp)/cρ)) # Upwind Approximation - Third Order
+    
     @. dρe -= vdivf2c(Ic2f(cuₕ * (cρe + cp)))
     
     # 4) tracer tendencies  
