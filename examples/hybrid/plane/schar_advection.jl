@@ -43,7 +43,7 @@ function warp_surface(coord)
   FT = eltype(x)
   a = 5000
   λ = 4000
-  h₀ = 250
+  h₀ = 1000.0
   if abs(x) <= a
     h = h₀ * exp(-(x/a)^2) * (cos(π*x/λ))^2
   else
@@ -379,7 +379,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 # run!
 using OrdinaryDiffEq
 Δt = 0.70
-timeend = 3600.0*5
+timeend = 3600.0*0.1
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
