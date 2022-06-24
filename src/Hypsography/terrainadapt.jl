@@ -25,3 +25,11 @@ struct LinearAdaption <: TerrainAdaption end
 function adapt(::LinearAdaption, z_ref, z_s, z_top)
     z_ref + (1 - z_ref / z_top) * z_s
 end
+
+struct ScharAdaption <: TerrainAdaption end
+
+function adapt(::ScharAdaption, z_ref, z_s, z_top)
+    FT = eltype(z_s)
+    s = z_top/3
+    return z_ref + z_s * sinh((z_top - z_ref)/s)/sinh(z_top/s)
+end

@@ -16,6 +16,7 @@ import ClimaCore:
     Operators,
     Hypsography
 using ClimaCore.Geometry
+using ClimaCore.Utilities: half
 
 using DiffEqCallbacks
 
@@ -36,7 +37,7 @@ const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
 const C_v = R_d / (γ - 1) # heat capacity at constant volume
 const T_0 = 273.16 # triple point temperature
 const kinematic_viscosity = 0.0 #m²/s
-const hyperdiffusivity = 0.0 #m²/s
+const hyperdiffusivity = 2e7 #m²/s
  
 function warp_surface(coord)   
   x = Geometry.component(coord,1)
@@ -54,7 +55,7 @@ end
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 30,
+    xelem = 15,
     zelem = 50,
     npoly = 4,
     warp_fn = warp_surface,
@@ -82,7 +83,7 @@ function hvspace_2D(
     hv_face_space = Spaces.ExtrudedFiniteDifferenceSpace(
                     horzspace,
                     vert_face_space,
-                    Hypsography.LinearAdaption(), 
+                    Hypsography.ScharAdaption(), 
                     z_surface
               )
     hv_center_space =
@@ -103,7 +104,6 @@ function init_advection_over_mountain(x, z)
     cv_d = C_v
     p₀ = MSLP
     g = grav
-    
     𝒩 = 0.01
     π_exner = @. exp(-g * z / (cp_d * θ₀))
     θ = @. θ₀ * exp(𝒩 ^2 * z / g)
@@ -198,13 +198,17 @@ function rhs_invariant!(dY, Y, _, t)
     z = coords.z
 
     # 0) update w at the bottom
-    # fw = -g^31 cuₕ/ g^33
 
     hdiv = Operators.Divergence()
     hwdiv = Operators.WeakDivergence()
     hgrad = Operators.Gradient()
     hwgrad = Operators.WeakGradient()
     hcurl = Operators.Curl()
+
+    # get u_cov at first interior cell center
+    # constant extrapolation to bottom face 
+    # apply as boundary condition on w for interpolation operator 
+    
 
     If2c = Operators.InterpolateF2C()
     Ic2f = Operators.InterpolateC2F(
@@ -222,7 +226,16 @@ function rhs_invariant!(dY, Y, _, t)
 
     cw = If2c.(fw)
     fuₕ = Ic2f.(cuₕ)
-    cuw = Geometry.Covariant13Vector.(cuₕ) .+ Geometry.Covariant13Vector.(cw)
+
+  #  u_1_base = Geometry.contravariant3.(Fields.level(fuₕ,half), Fields.level(Fields.local_geometry_field(hv_face_space), half))
+  #  g33 = Geometry.contravariant3.(Ref(Covariant3Vector(1)), Fields.level(Fields.local_geometry_field(hv_face_space), half)) 
+  #  u_3_base = Geometry.Covariant3Vector.(-1 .* u_1_base ./ g33)  # fw = -g^31 cuₕ/ g^33
+  #  apply_boundary_w = Operators.SetBoundaryOperator(bottom = Operators.SetValue(u_3_base))
+  #  @. fw = apply_boundary_w(fw)
+
+    cuw = @. Geometry.Covariant13Vector(cuₕ) + Geometry.Covariant13Vector(cw)
+
+    fuw = @. Ic2f(cuw)
 
     ce = @. cρe / cρ
     cq = @. cρq / cρ
@@ -242,7 +255,7 @@ function rhs_invariant!(dY, Y, _, t)
     Spaces.weighted_dss!(duₕ)
     Spaces.weighted_dss!(dρq)
 
-    κ₄_dynamic = hyperdiffusivity * 1 # m^4/s
+    κ₄_dynamic = hyperdiffusivity # m^4/s
     κ₄_tracer = hyperdiffusivity * 0 
     @. dρe = -κ₄_dynamic * hwdiv(cρ * hgrad(χe))
     @. dρq = -κ₄_tracer * hwdiv(cρ * hgrad(χq))
@@ -255,6 +268,12 @@ function rhs_invariant!(dY, Y, _, t)
     dρ .-= hdiv.(cρ .* (cuw))
 
     # 1.b) vertical divergence
+    
+
+    # Apply n ⋅ ∇(X) = F
+    # n^{i} * ∂X/∂_{x^{i}} 
+    # Contravariant3Vector(1) ⊗ (Flux Tensor)
+
     vdivf2c = Operators.DivergenceF2C(
         top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
         bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
@@ -288,31 +307,34 @@ function rhs_invariant!(dY, Y, _, t)
     # cross product
     # convert to contravariant
     # these will need to be modified with topography
-    fu¹ = @. Geometry.project(Geometry.Contravariant1Axis(), Ic2f(cuw)) 
-    fu³ = @. Geometry.project(Geometry.Contravariant3Axis(), Ic2f(cuw)) 
-    #fu¹ = @. Geometry.project(Geometry.Contravariant1Axis(), Ic2f(cuₕ)) 
-    #fu³ = @. Geometry.project(Geometry.Contravariant3Axis(), fw) 
+    fu¹ = @. Geometry.project(Geometry.Contravariant1Axis(), fuw) 
+    fu³ = @. Geometry.project(Geometry.Contravariant3Axis(), fuw) 
+
+    Spaces.weighted_dss!(fu¹)
+    Spaces.weighted_dss!(fu³)
+
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
     @. duₕ -= If2c(fω¹ × fu³)
-
     @. duₕ -= hgrad(cp) / cρ
+
     vgradc2f = Operators.GradientC2F(
         bottom = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
         top = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
     )
-    @. dw -= vgradc2f(cp) / Ic2f(cρ)
-
+    
     cE = @. (norm(cuw)^2) / 2 + Φ(z)
     @. duₕ -= hgrad(cE)
     @. dw -= vgradc2f(cE)
+    
+    @. dw -= vgradc2f(cp) / Ic2f(cρ)
 
     # 3) total energy
 
     @. dρe -= hdiv(cuw * (cρe + cp))
     
     #@. dρe -= vdivf2c(fw * Ic2f(cρe + cp)) # Strange Waves! 
-    @. dρe -= vdivf2c(Ic2f(cρ) * f_upwind_product1(fw, (cρe + cp)/cρ)) # Upwind Approximation - First Order
-    #@. dρe -= vdivf2c(Ic2f(cρ) * f_upwind_product3(fw, (cρe + cp)/cρ)) # Upwind Approximation - Third Order
+    #@. dρe -= vdivf2c(Ic2f(cρ) * f_upwind_product1(fw, (cρe + cp)/cρ)) # Upwind Approximation - First Order
+    @. dρe -= vdivf2c(Ic2f(cρ) * f_upwind_product3(fw, (cρe + cp)/cρ)) # Upwind Approximation - Third Order
     
     @. dρe -= vdivf2c(Ic2f(cuₕ * (cρe + cp)))
     
@@ -379,9 +401,8 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 0.70
-#timeend = 3600.0*
-timeend = 5Δt
+Δt = 1.0
+timeend = 3600.0 * 5.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
@@ -395,7 +416,7 @@ integrator = OrdinaryDiffEq.init(
     prob,
     SSPRK33(),
     dt = Δt,
-    saveat = Δt,
+    saveat = 500.0,
     progress = true,
     progress_message = (dt, u, p, t) -> t,
     callback = dss_callback
@@ -411,11 +432,13 @@ ENV["GKSwstype"] = "nul"
 import Plots, ClimaCorePlots
 Plots.GRBackend()
 
-dir = "schar_advection_dt07_debug_tendency"
+dir = "schar_advection_peak250_hypd_3rd_1km_scharadapt"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 
+tendency_plots = false
 
+if tendency_plots 
 anim = Plots.@animate for u in sol.u
     Y = u;
     cρ = Y.Yc.ρ # scalar on centers
@@ -632,7 +655,7 @@ anim = Plots.@animate for u in sol.u
     Plots.plot(p1, p2, p3, p4, layout = (2, 2), legend = false, size = (1200,1200))
 end
 Plots.mp4(anim, joinpath(path, "tendency_w.mp4"), fps = 20)
-
+end
 
 anim = Plots.@animate for u in sol.u
     Plots.plot(u.Yc.ρe ./ u.Yc.ρ)
