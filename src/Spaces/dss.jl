@@ -78,6 +78,16 @@ end
     local_geometry::Geometry.LocalGeometry,
     weight,
 ) = arg * weight
+@inline dss_transform(
+    arg::Geometry.Contravariant3Vector,
+    local_geometry::Geometry.LocalGeometry,
+    weight,
+) = arg * weight
+@inline dss_transform(
+    arg::Geometry.Contravariant1Vector,
+    local_geometry::Geometry.LocalGeometry,
+    weight,
+) = arg * weight
 
 @inline function dss_transform(
     arg::Geometry.AxisVector,
