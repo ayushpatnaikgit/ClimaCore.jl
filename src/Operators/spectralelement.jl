@@ -246,6 +246,11 @@ Base.@propagate_inbounds function get_node(data::StaticArrays.SArray, ij, slabid
     data[ij]
 end
 
+dont_limit = (args...) -> true
+for m in methods(get_node)
+    m.recursion_relation = dont_limit
+end
+
 Base.@propagate_inbounds function get_local_geometry(space::Spaces.AbstractSpectralElementSpace, ij, slabidx)
     i,j = Tuple(ij)
     h = slabidx.h

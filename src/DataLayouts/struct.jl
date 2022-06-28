@@ -253,7 +253,7 @@ if VERSION >= v"1.7.0-beta1"
     # cannot be self referential so there are no cycles in get/set_struct (bounded tree)
     # TODO: enforce inference termination some other way
     if hasfield(Method, :recursion_relation)
-        dont_limit = (args...) -> true
+            dont_limit = (args...) -> true
         for m in methods(get_struct)
             m.recursion_relation = dont_limit
         end
