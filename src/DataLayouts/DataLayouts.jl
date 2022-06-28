@@ -287,10 +287,15 @@ function replace_basetype(data::IJFH{S, Nij}, ::Type{T}) where {S, Nij, T}
 end
 
 @inline function Base.getindex(data::IJFH{S}, i, j, h) where {S}
-    @inbounds get_struct(parent(data), S, Val(3), CartesianIndex(i,j,1,h))
+    @inbounds get_struct(parent(data), S, Val(3), CartesianIndex(i, j, 1, h))
 end
 @inline function Base.setindex!(data::IJFH{S}, val, i, j, h) where {S}
-    @inbounds set_struct!(parent(data), convert(S, val), Val(3), CartesianIndex(i,j,1,h))
+    @inbounds set_struct!(
+        parent(data),
+        convert(S, val),
+        Val(3),
+        CartesianIndex(i, j, 1, h),
+    )
 end
 
 
@@ -508,7 +513,12 @@ end
 end
 
 @inline function Base.setindex!(data::DataF{S}, val) where {S}
-    @inbounds set_struct!(parent(data), convert(S, val), Val(1), CartesianIndex(1))
+    @inbounds set_struct!(
+        parent(data),
+        convert(S, val),
+        Val(1),
+        CartesianIndex(1),
+    )
 end
 
 @propagate_inbounds function Base.setindex!(
@@ -614,7 +624,7 @@ end
 ) where {S, Nij}
     @boundscheck (1 <= i <= Nij && 1 <= j <= Nij) ||
                  throw(BoundsError(data, (i, j)))
-    @inbounds get_struct(parent(data), S, Val(3), CartesianIndex(i,j,1))
+    @inbounds get_struct(parent(data), S, Val(3), CartesianIndex(i, j, 1))
 end
 
 @inline function Base.setindex!(
@@ -625,7 +635,12 @@ end
 ) where {S, Nij}
     @boundscheck (1 <= i <= Nij && 1 <= j <= Nij) ||
                  throw(BoundsError(data, (i, j)))
-    @inbounds set_struct!(parent(data), convert(S, val), Val(3), CartesianIndex(i,j,1))
+    @inbounds set_struct!(
+        parent(data),
+        convert(S, val),
+        Val(3),
+        CartesianIndex(i, j, 1),
+    )
 end
 
 @inline function column(data::IJF{S, Nij}, i, j) where {S, Nij}
@@ -716,12 +731,17 @@ end
 
 @inline function Base.getindex(data::IF{S, Ni}, i::Integer) where {S, Ni}
     @boundscheck (1 <= i <= Ni) || throw(BoundsError(data, (i,)))
-    @inbounds get_struct(parent(data), S, Val(2), CartesianIndex(i,1))
+    @inbounds get_struct(parent(data), S, Val(2), CartesianIndex(i, 1))
 end
 
 @inline function Base.setindex!(data::IF{S, Ni}, val, i::Integer) where {S, Ni}
     @boundscheck (1 <= i <= Ni) || throw(BoundsError(data, (i,)))
-    @inbounds set_struct!(parent(data), convert(S, val), Val(2), CartesianIndex(i,1))
+    @inbounds set_struct!(
+        parent(data),
+        convert(S, val),
+        Val(2),
+        CartesianIndex(i, 1),
+    )
 end
 
 @inline function column(data::IF{S, Ni}, i) where {S, Ni}
@@ -796,7 +816,7 @@ end
 @inline function Base.getindex(data::VF{S}, v::Integer) where {S}
     @boundscheck 1 <= v <= size(parent(data), 1) ||
                  throw(BoundsError(data, (v,)))
-    @inbounds get_struct(parent(data), S, Val(2), CartesianIndex(v,1))
+    @inbounds get_struct(parent(data), S, Val(2), CartesianIndex(v, 1))
 end
 
 @propagate_inbounds function Base.getindex(
@@ -817,7 +837,12 @@ end
 @inline function Base.setindex!(data::VF{S}, val, v::Integer) where {S}
     @boundscheck (1 <= v <= length(parent(data))) ||
                  throw(BoundsError(data, (v,)))
-    @inbounds set_struct!(parent(data), convert(S, val), Val(2), CartesianIndex(v,1))
+    @inbounds set_struct!(
+        parent(data),
+        convert(S, val),
+        Val(2),
+        CartesianIndex(v, 1),
+    )
 end
 
 @inline function column(data::VF, i, h)

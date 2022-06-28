@@ -161,31 +161,42 @@ typesize(::Type{T}, ::Type{S}) where {T, S} = div(sizeof(S), sizeof(T))
     return out
 end
 
-@inline offset_index(start_index::CartesianIndex{N}, ::Val{D}, offset) where {N, D}= CartesianIndex(ntuple(n -> n == D ? start_index[n] + offset : start_index[n], N))
+@inline offset_index(
+    start_index::CartesianIndex{N},
+    ::Val{D},
+    offset,
+) where {N, D} = CartesianIndex(
+    ntuple(n -> n == D ? start_index[n] + offset : start_index[n], N),
+)
 
 """
     get_struct(array, S[, offset=0])
 
 Construct an object of type `S` from the values of `array`, optionally offset by `offset` from the start of the array.
 """
-@generated function get_struct(array::AbstractArray{T}, ::Type{S}, ::Val{D}, start_index::CartesianIndex) where {T, S, D}
+@generated function get_struct(
+    array::AbstractArray{T},
+    ::Type{S},
+    ::Val{D},
+    start_index::CartesianIndex,
+) where {T, S, D}
     #if @generated
-        tup = :(())
-        for i in 1:fieldcount(S)
-            push!(
-                tup.args,
-                :(get_struct(
-                    array,
-                    fieldtype(S, $i),
-                    Val($D),
-                    offset_index(start_index, Val($D), fieldtypeoffset(T, S, $i)),
-                )),
-            )
-        end
-        return quote
-            Base.@_propagate_inbounds_meta
-            bypass_constructor(S, $tup)
-        end
+    tup = :(())
+    for i in 1:fieldcount(S)
+        push!(
+            tup.args,
+            :(get_struct(
+                array,
+                fieldtype(S, $i),
+                Val($D),
+                offset_index(start_index, Val($D), fieldtypeoffset(T, S, $i)),
+            )),
+        )
+    end
+    return quote
+        Base.@_propagate_inbounds_meta
+        bypass_constructor(S, $tup)
+    end
     # else
     #     Base.@_propagate_inbounds_meta
     #     args = ntuple(fieldcount(S)) do i
@@ -205,24 +216,29 @@ end
     @inbounds return array[start_index]
 end
 
-@generated function set_struct!(array::AbstractArray{T}, val::S, ::Val{D}, start_index::CartesianIndex) where {T, S, D}
+@generated function set_struct!(
+    array::AbstractArray{T},
+    val::S,
+    ::Val{D},
+    start_index::CartesianIndex,
+) where {T, S, D}
     # if @generated
-        ex = quote
-            Base.@_propagate_inbounds_meta
-        end
-        for i in 1:fieldcount(S)
-            push!(
-                ex.args,
-                :(set_struct!(
-                    array,
-                    getfield(val, $i),
-                    Val($D),
-                    offset_index(start_index, Val($D), fieldtypeoffset(T, S, $i)),
-                )),
-            )
-        end
-        push!(ex.args, :(return val))
-        return ex
+    ex = quote
+        Base.@_propagate_inbounds_meta
+    end
+    for i in 1:fieldcount(S)
+        push!(
+            ex.args,
+            :(set_struct!(
+                array,
+                getfield(val, $i),
+                Val($D),
+                offset_index(start_index, Val($D), fieldtypeoffset(T, S, $i)),
+            )),
+        )
+    end
+    push!(ex.args, :(return val))
+    return ex
     # else
     #     Base.@_propagate_inbounds_meta
     #     for i in 1:fieldcount(S)
@@ -242,7 +258,7 @@ end
     val::S,
     ::Val{D},
     index::CartesianIndex,
-) where {S,D}
+) where {S, D}
     @inbounds array[index] = val
     val
 end
@@ -253,7 +269,7 @@ if VERSION >= v"1.7.0-beta1"
     # cannot be self referential so there are no cycles in get/set_struct (bounded tree)
     # TODO: enforce inference termination some other way
     if hasfield(Method, :recursion_relation)
-            dont_limit = (args...) -> true
+        dont_limit = (args...) -> true
         for m in methods(get_struct)
             m.recursion_relation = dont_limit
         end
