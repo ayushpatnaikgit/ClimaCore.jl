@@ -654,7 +654,7 @@ function apply_operator(op::WeakGradient{(1,)}, space, slabidx, arg)
         ij = CartesianIndex((i,))
         local_geometry = get_local_geometry(space, ij, slabidx)
         W = local_geometry.WJ / local_geometry.J
-        Wx = W ⊠ get_node(slab_data, i)
+        Wx = W ⊠ get_node(arg, ij, slabidx)
         for ii in 1:Nq
             Dᵀ₁Wf = Geometry.Covariant1Vector(D[i, ii]) ⊗ Wx
             out[ii] = out[ii] ⊟ Dᵀ₁Wf
@@ -1002,55 +1002,52 @@ struct Interpolate{I, S} <: TensorOperator
 end
 Interpolate(space) = Interpolate{operator_axes(space), typeof(space)}(space)
 
-function apply_slab(
-    op::Interpolate{(1,)},
-    slab_space_out,
-    slab_space_in,
-    slab_data,
-)
-    FT = Spaces.undertype(slab_space_out)
-    QS_in = Spaces.quadrature_style(slab_space_in)
-    QS_out = Spaces.quadrature_style(slab_space_out)
+function apply_operator(op::Interpolate{(1,)}, space, slabidx, arg)
+    FT = Spaces.undertype(space)
+    QS_in = Spaces.quadrature_style(space)
+    QS_out = Spaces.quadrature_style(op.space)
     Nq_in = Quadratures.degrees_of_freedom(QS_in)
     Nq_out = Quadratures.degrees_of_freedom(QS_out)
     Imat = Quadratures.interpolation_matrix(FT, QS_out, QS_in)
-    S = eltype(slab_data)
+    S = eltype(arg)
     slab_data_out = MVector{Nq_out, S}(undef)
     @inbounds for i in 1:Nq_out
         # manually inlined rmatmul with slab_getnode
-        r = Imat[i, 1] ⊠ get_node(slab_data, 1)
+        r = Imat[i, 1] ⊠ get_node(arg, CartesianIndex((1,)), slabidx)
         for ii in 2:Nq_in
-            r = RecursiveApply.rmuladd(Imat[i, ii], get_node(slab_data, ii), r)
+            ij = CartesianIndex((ii,))
+            r = RecursiveApply.rmuladd(
+                Imat[i, ii],
+                get_node(arg, ii, slabidx),
+                r,
+            )
         end
         slab_data_out[i] = r
     end
-    return slab_data_out
+    return SArray(slab_data_out)
 end
 
-function apply_slab(
-    op::Interpolate{(1, 2)},
-    slab_space_out,
-    slab_space_in,
-    slab_data,
-)
-    FT = Spaces.undertype(slab_space_out)
-    QS_in = Spaces.quadrature_style(slab_space_in)
-    QS_out = Spaces.quadrature_style(slab_space_out)
+function apply_operator(op::Interpolate{(1, 2)}, space, slabidx, arg)
+    FT = Spaces.undertype(space)
+    QS_in = Spaces.quadrature_style(space)
+    QS_out = Spaces.quadrature_style(op.space)
     Nq_in = Quadratures.degrees_of_freedom(QS_in)
     Nq_out = Quadratures.degrees_of_freedom(QS_out)
     Imat = Quadratures.interpolation_matrix(FT, QS_out, QS_in)
-    S = eltype(slab_data)
+    S = eltype(arg)
     # temporary storage
     temp = MArray{Tuple{Nq_out, Nq_in}, S, 2, Nq_out * Nq_in}(undef)
     slab_data_out = MArray{Tuple{Nq_out, Nq_out}, S, 2, Nq_out * Nq_out}(undef)
     @inbounds for j in 1:Nq_in, i in 1:Nq_out
         # manually inlined rmatmul1 with slab get_node
         # we do this to remove one allocated intermediate array
-        r = Imat[i, 1] ⊠ get_node(slab_data, 1, j)
+        ij = CartesianIndex((1, j))
+        r = Imat[i, 1] ⊠ get_node(arg, ij, slabidx)
         for ii in 2:Nq_in
+            ij = CartesianIndex((ii, j))
             r = RecursiveApply.rmuladd(
                 Imat[i, ii],
-                get_node(slab_data, ii, j),
+                get_node(arg, ij, slabidx),
                 r,
             )
         end
@@ -1091,69 +1088,69 @@ struct Restrict{I, S} <: TensorOperator
 end
 Restrict(space) = Restrict{operator_axes(space), typeof(space)}(space)
 
-function apply_slab(
-    op::Restrict{(1,)},
-    slab_space_out,
-    slab_space_in,
-    slab_data,
-)
-    FT = Spaces.undertype(slab_space_out)
-    QS_in = Spaces.quadrature_style(slab_space_in)
-    QS_out = Spaces.quadrature_style(slab_space_out)
+function apply_operator(op::Restrict{(1,)}, space, slabidx, arg)
+    FT = Spaces.undertype(space)
+    QS_in = Spaces.quadrature_style(space)
+    QS_out = Spaces.quadrature_style(op.space)
     Nq_in = Quadratures.degrees_of_freedom(QS_in)
     Nq_out = Quadratures.degrees_of_freedom(QS_out)
     ImatT = Quadratures.interpolation_matrix(FT, QS_in, QS_out)' # transpose
-    S = eltype(slab_data)
+    S = eltype(arg)
     slab_data_out = MVector{Nq_out, S}(undef)
-    slab_local_geometry_in = Spaces.local_geometry_data(slab_space_in)
-    slab_local_geometry_out = Spaces.local_geometry_data(slab_space_out)
-    WJ_in = slab_local_geometry_in.WJ
-    WJ_out = slab_local_geometry_out.WJ
     @inbounds for i in 1:Nq_out
         # manually inlined rmatmul with slab get_node
-        r = ImatT[i, 1] ⊠ (WJ_in[1] ⊠ get_node(slab_data, 1))
+        ij = CartesianIndex((1,))
+        WJ = get_local_geometry(space, ij, slabidx).WJ
+        r = ImatT[i, 1] ⊠ (WJ ⊠ get_node(arg, ij, slabidx))
         for ii in 2:Nq_in
-            WJ_node = WJ_in[ii] ⊠ get_node(slab_data, ii)
-            r = RecursiveApply.rmuladd(ImatT[i, ii], WJ_node, r)
+            ij = CartesianIndex((ii,))
+            WJ = get_local_geometry(space, ij, slabidx).WJ
+            r = RecursiveApply.rmuladd(
+                ImatT[i, ii],
+                WJ ⊠ get_node(arg, ij, slabidx),
+                r,
+            )
         end
-        slab_data_out[i] = RecursiveApply.rdiv(r, WJ_out[i])
+        ij_out = CartesianIndex((i,))
+        WJ_out = get_local_geometry(op.space, ij_out, slabidx).WJ
+        slab_data_out[i] = RecursiveApply.rdiv(r, WJ_out)
     end
     return slab_data_out
 end
 
-function apply_slab(
-    op::Restrict{(1, 2)},
-    slab_space_out,
-    slab_space_in,
-    slab_data,
-)
-    FT = Spaces.undertype(slab_space_out)
-    QS_in = Spaces.quadrature_style(slab_space_in)
-    QS_out = Spaces.quadrature_style(slab_space_out)
+function apply_operator(op::Restrict{(1, 2)}, space, slabidx, arg)
+    FT = Spaces.undertype(space)
+    QS_in = Spaces.quadrature_style(space)
+    QS_out = Spaces.quadrature_style(op.space)
     Nq_in = Quadratures.degrees_of_freedom(QS_in)
     Nq_out = Quadratures.degrees_of_freedom(QS_out)
     ImatT = Quadratures.interpolation_matrix(FT, QS_in, QS_out)' # transpose
-    S = eltype(slab_data)
+    S = eltype(arg)
     # temporary storage
     temp = MArray{Tuple{Nq_out, Nq_in}, S, 2, Nq_out * Nq_in}(undef)
     slab_data_out = MArray{Tuple{Nq_out, Nq_out}, S, 2, Nq_out * Nq_out}(undef)
-    slab_local_geometry_in = Spaces.local_geometry_data(slab_space_in)
-    slab_local_geometry_out = Spaces.local_geometry_data(slab_space_out)
-    WJ_in = slab_local_geometry_in.WJ
-    WJ_out = slab_local_geometry_out.WJ
     @inbounds for j in 1:Nq_in, i in 1:Nq_out
         # manually inlined rmatmul1 with slab get_node
-        r = ImatT[i, 1] ⊠ (WJ_in[1, j] ⊠ get_node(slab_data, 1, j))
+        ij = CartesianIndex((1, j))
+        WJ = get_local_geometry(space, ij, slabidx).WJ
+        r = ImatT[i, 1] ⊠ (WJ ⊠ get_node(arg, ij, slabidx))
         for ii in 2:Nq_in
-            WJ_node = WJ_in[ii, j] ⊠ get_node(slab_data, ii, j)
-            r = RecursiveApply.rmuladd(ImatT[i, ii], WJ_node, r)
+            ij = CartesianIndex((ii, j))
+            WJ = get_local_geometry(space, ij, slabidx).WJ
+            r = RecursiveApply.rmuladd(
+                ImatT[i, ii],
+                WJ ⊠ get_node(arg, ij, slabidx),
+                r,
+            )
         end
         temp[i, j] = r
     end
     @inbounds for j in 1:Nq_out, i in 1:Nq_out
+        ij_out = CartesianIndex((i, j))
+        WJ_out = get_local_geometry(op.space, ij, slabidx)
         slab_data_out[i, j] = RecursiveApply.rdiv(
             RecursiveApply.rmatmul2(ImatT, temp, i, j),
-            WJ_out[i, j],
+            WJ_out,
         )
     end
     return SMatrix(slab_data_out)
