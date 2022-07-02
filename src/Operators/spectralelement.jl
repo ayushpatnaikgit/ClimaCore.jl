@@ -1073,10 +1073,11 @@ struct Interpolate{I, S} <: TensorOperator
 end
 Interpolate(space) = Interpolate{operator_axes(space), typeof(space)}(space)
 
-function apply_operator(op::Interpolate{(1,)}, space, slabidx, arg)
-    FT = Spaces.undertype(space)
-    QS_in = Spaces.quadrature_style(space)
-    QS_out = Spaces.quadrature_style(op.space)
+function apply_operator(op::Interpolate{(1,)}, space_out, slabidx, arg)
+    FT = Spaces.undertype(space_out)
+    space_in = axes(arg)
+    QS_in = Spaces.quadrature_style(space_in)
+    QS_out = Spaces.quadrature_style(space_out)
     Nq_in = Quadratures.degrees_of_freedom(QS_in)
     Nq_out = Quadratures.degrees_of_freedom(QS_out)
     Imat = Quadratures.interpolation_matrix(FT, QS_out, QS_in)
@@ -1098,10 +1099,11 @@ function apply_operator(op::Interpolate{(1,)}, space, slabidx, arg)
     return SArray(slab_data_out)
 end
 
-function apply_operator(op::Interpolate{(1, 2)}, space, slabidx, arg)
-    FT = Spaces.undertype(space)
-    QS_in = Spaces.quadrature_style(space)
-    QS_out = Spaces.quadrature_style(op.space)
+function apply_operator(op::Interpolate{(1, 2)}, space_out, slabidx, arg)
+    FT = Spaces.undertype(space_out)
+    space_in = axes(arg)
+    QS_in = Spaces.quadrature_style(space_in)
+    QS_out = Spaces.quadrature_style(space_out)
     Nq_in = Quadratures.degrees_of_freedom(QS_in)
     Nq_out = Quadratures.degrees_of_freedom(QS_out)
     Imat = Quadratures.interpolation_matrix(FT, QS_out, QS_in)
@@ -1159,10 +1161,11 @@ struct Restrict{I, S} <: TensorOperator
 end
 Restrict(space) = Restrict{operator_axes(space), typeof(space)}(space)
 
-function apply_operator(op::Restrict{(1,)}, space, slabidx, arg)
-    FT = Spaces.undertype(space)
-    QS_in = Spaces.quadrature_style(space)
-    QS_out = Spaces.quadrature_style(op.space)
+function apply_operator(op::Restrict{(1,)}, space_out, slabidx, arg)
+    FT = Spaces.undertype(space_out)
+    space_in = axes(arg)
+    QS_in = Spaces.quadrature_style(space_in)
+    QS_out = Spaces.quadrature_style(space_out)
     Nq_in = Quadratures.degrees_of_freedom(QS_in)
     Nq_out = Quadratures.degrees_of_freedom(QS_out)
     ImatT = Quadratures.interpolation_matrix(FT, QS_in, QS_out)' # transpose
@@ -1171,11 +1174,11 @@ function apply_operator(op::Restrict{(1,)}, space, slabidx, arg)
     @inbounds for i in 1:Nq_out
         # manually inlined rmatmul with slab get_node
         ij = CartesianIndex((1,))
-        WJ = get_local_geometry(space, ij, slabidx).WJ
+        WJ = get_local_geometry(space_in, ij, slabidx).WJ
         r = ImatT[i, 1] ⊠ (WJ ⊠ get_node(arg, ij, slabidx))
         for ii in 2:Nq_in
             ij = CartesianIndex((ii,))
-            WJ = get_local_geometry(space, ij, slabidx).WJ
+            WJ = get_local_geometry(space_in, ij, slabidx).WJ
             r = RecursiveApply.rmuladd(
                 ImatT[i, ii],
                 WJ ⊠ get_node(arg, ij, slabidx),
@@ -1183,16 +1186,17 @@ function apply_operator(op::Restrict{(1,)}, space, slabidx, arg)
             )
         end
         ij_out = CartesianIndex((i,))
-        WJ_out = get_local_geometry(op.space, ij_out, slabidx).WJ
+        WJ_out = get_local_geometry(space_out, ij_out, slabidx).WJ
         slab_data_out[i] = RecursiveApply.rdiv(r, WJ_out)
     end
     return slab_data_out
 end
 
-function apply_operator(op::Restrict{(1, 2)}, space, slabidx, arg)
-    FT = Spaces.undertype(space)
-    QS_in = Spaces.quadrature_style(space)
-    QS_out = Spaces.quadrature_style(op.space)
+function apply_operator(op::Restrict{(1, 2)}, space_out, slabidx, arg)
+    FT = Spaces.undertype(space_out)
+    space_in = axes(arg)
+    QS_in = Spaces.quadrature_style(space_in)
+    QS_out = Spaces.quadrature_style(space_out)
     Nq_in = Quadratures.degrees_of_freedom(QS_in)
     Nq_out = Quadratures.degrees_of_freedom(QS_out)
     ImatT = Quadratures.interpolation_matrix(FT, QS_in, QS_out)' # transpose
@@ -1203,11 +1207,11 @@ function apply_operator(op::Restrict{(1, 2)}, space, slabidx, arg)
     @inbounds for j in 1:Nq_in, i in 1:Nq_out
         # manually inlined rmatmul1 with slab get_node
         ij = CartesianIndex((1, j))
-        WJ = get_local_geometry(space, ij, slabidx).WJ
+        WJ = get_local_geometry(space_in, ij, slabidx).WJ
         r = ImatT[i, 1] ⊠ (WJ ⊠ get_node(arg, ij, slabidx))
         for ii in 2:Nq_in
             ij = CartesianIndex((ii, j))
-            WJ = get_local_geometry(space, ij, slabidx).WJ
+            WJ = get_local_geometry(space_in, ij, slabidx).WJ
             r = RecursiveApply.rmuladd(
                 ImatT[i, ii],
                 WJ ⊠ get_node(arg, ij, slabidx),
@@ -1218,7 +1222,7 @@ function apply_operator(op::Restrict{(1, 2)}, space, slabidx, arg)
     end
     @inbounds for j in 1:Nq_out, i in 1:Nq_out
         ij_out = CartesianIndex((i, j))
-        WJ_out = get_local_geometry(op.space, ij, slabidx)
+        WJ_out = get_local_geometry(space_out, ij, slabidx)
         slab_data_out[i, j] = RecursiveApply.rdiv(
             RecursiveApply.rmatmul2(ImatT, temp, i, j),
             WJ_out,
