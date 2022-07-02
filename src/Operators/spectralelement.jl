@@ -12,9 +12,9 @@ Represents an operation that is applied to each element.
 Subtypes `Op` of this should define the following:
 - [`operator_return_eltype(::Op, ElTypes...)`](@ref)
 - [`allocate_work(::Op, args...)`](@ref)
-- [`apply_slab(::Op, work, args...)`](@ref)
+- [`apply_operator(::Op, work, args...)`](@ref)
 
-Additionally, the result type `OpResult <: OperatorSlabResult` of `apply_slab` should define `get_node(::OpResult, i, j)`.
+Additionally, the result type `OpResult <: OperatorSlabResult` of `apply_operator` should define `get_node(::OpResult, ij, slabidx)`.
 """
 abstract type SpectralElementOperator end
 
