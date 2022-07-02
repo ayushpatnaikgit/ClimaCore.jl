@@ -315,7 +315,7 @@ Base.@propagate_inbounds function get_local_geometry(
     else
         v = slabidx.v
     end
-    Spaces.local_geometry_data(local_geometry)[i, j, nothing, v, h]
+    Spaces.local_geometry_data(space)[i, j, nothing, v, h]
 end
 Base.@propagate_inbounds function get_local_geometry(
     space::Spaces.AbstractSpectralElementSpace,
@@ -329,7 +329,7 @@ Base.@propagate_inbounds function get_local_geometry(
     else
         v = slabidx.v
     end
-    Spaces.local_geometry_data(local_geometry)[i, j, nothing, v, h]
+    Spaces.local_geometry_data(space)[i, j, nothing, v, h]
 end
 
 Base.@propagate_inbounds function set_node!(
@@ -1222,7 +1222,7 @@ function apply_operator(op::Restrict{(1, 2)}, space_out, slabidx, arg)
     end
     @inbounds for j in 1:Nq_out, i in 1:Nq_out
         ij_out = CartesianIndex((i, j))
-        WJ_out = get_local_geometry(space_out, ij, slabidx)
+        WJ_out = get_local_geometry(space_out, ij_out, slabidx)
         slab_data_out[i, j] = RecursiveApply.rdiv(
             RecursiveApply.rmatmul2(ImatT, temp, i, j),
             WJ_out,
