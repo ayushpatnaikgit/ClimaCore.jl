@@ -33,6 +33,21 @@ operator_axes(space::Spaces.SpectralElementSpaceSlab2D) = (1, 2)
 operator_axes(space::Spaces.ExtrudedFiniteDifferenceSpace) =
     operator_axes(space.horizontal_space)
 
+
+function node_indices(space::Spaces.SpectralElementSpace1D)
+    QS = Spaces.quadrature_style(space)
+    Nq = Quadratures.degrees_of_freedom(QS)
+    CartesianIndices((Nq,))
+end
+function node_indices(space::Spaces.SpectralElementSpace2D)
+    QS = Spaces.quadrature_style(space)
+    Nq = Quadratures.degrees_of_freedom(QS)
+    CartesianIndices((Nq, Nq))
+end
+node_indices(space::Spaces.ExtrudedFiniteDifferenceSpace) =
+    node_indices(space.horizontal_space)
+
+
 """
     SpectralBroadcasted{Style}(op, args[,axes[, work]])
 
@@ -184,8 +199,7 @@ function copyto_slab!(out, bc, slabidx)
     QS = Spaces.quadrature_style(space)
     Nq = Quadratures.degrees_of_freedom(QS)
     rbc = resolve_operator(bc, slabidx)
-    @inbounds for j in 1:Nq, i in 1:Nq
-        ij = CartesianIndex((i, j))
+    @inbounds for ij in node_indices(axes(out))
         set_node!(out, ij, slabidx, get_node(rbc, ij, slabidx))
     end
     return nothing
@@ -233,20 +247,6 @@ Base.@propagate_inbounds function get_node(scalar, ij, slabidx)
 end
 Base.@propagate_inbounds function get_node(
     field::Fields.Field,
-    ij::CartesianIndex{2},
-    slabidx,
-)
-    i, j = Tuple(ij)
-    if field isa Fields.FaceExtrudedFiniteDifferenceField
-        v = slabidx.v + half
-    else
-        v = slabidx.v
-    end
-    h = slabidx.h
-    Fields.field_values(field)[i, j, nothing, v, h]
-end
-Base.@propagate_inbounds function get_node(
-    field::Fields.Field,
     ij::CartesianIndex{1},
     slabidx,
 )
@@ -259,6 +259,21 @@ Base.@propagate_inbounds function get_node(
     h = slabidx.h
     Fields.field_values(field)[i, nothing, nothing, v, h]
 end
+Base.@propagate_inbounds function get_node(
+    field::Fields.Field,
+    ij::CartesianIndex{2},
+    slabidx,
+)
+    i, j = Tuple(ij)
+    if field isa Fields.FaceExtrudedFiniteDifferenceField
+        v = slabidx.v + half
+    else
+        v = slabidx.v
+    end
+    h = slabidx.h
+    Fields.field_values(field)[i, j, nothing, v, h]
+end
+
 
 
 Base.@propagate_inbounds function get_node(
@@ -301,14 +316,33 @@ end
 
 Base.@propagate_inbounds function set_node!(
     field::Fields.Field,
-    ij,
+    ij::CartesianIndex{1},
+    slabidx,
+    val,
+)
+    i, = Tuple(ij)
+    if field isa Fields.FaceExtrudedFiniteDifferenceField
+        v = slabidx.v + half
+    else
+        v = slabidx.v
+    end
+    h = slabidx.h
+    Fields.field_values(field)[i, nothing, nothing, v, h] = val
+end
+Base.@propagate_inbounds function set_node!(
+    field::Fields.Field,
+    ij::CartesianIndex{2},
     slabidx,
     val,
 )
     i, j = Tuple(ij)
+    if field isa Fields.FaceExtrudedFiniteDifferenceField
+        v = slabidx.v + half
+    else
+        v = slabidx.v
+    end
     h = slabidx.h
-    Fields.field_values(field)[i, j, h] = val
-    # setindex!(Fields.field_values(slab(field, slabidx)), val, ij)
+    Fields.field_values(field)[i, j, nothing, v, h] = val
 end
 
 
