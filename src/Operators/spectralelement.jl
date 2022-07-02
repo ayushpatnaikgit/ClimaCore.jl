@@ -237,7 +237,13 @@ Base.@propagate_inbounds function get_node(
     slabidx,
 )
     i, j = Tuple(ij)
-    Fields.field_values(field)[i, j, nothing, slabidx.v, slabidx.h]
+    if field isa Fields.FaceExtrudedFiniteDifferenceField
+        v = slabidx.v + half
+    else
+        v = slabidx.v
+    end
+    h = slabidx.h
+    Fields.field_values(field)[i, j, nothing, v, h]
 end
 Base.@propagate_inbounds function get_node(
     field::Fields.Field,
@@ -245,7 +251,13 @@ Base.@propagate_inbounds function get_node(
     slabidx,
 )
     i, = Tuple(ij)
-    Fields.field_values(field)[i, nothing, nothing, slabidx.v, slabidx.h]
+    if field isa Fields.FaceExtrudedFiniteDifferenceField
+        v = slabidx.v + half
+    else
+        v = slabidx.v
+    end
+    h = slabidx.h
+    Fields.field_values(field)[i, nothing, nothing, v, h]
 end
 
 
