@@ -231,17 +231,24 @@ _get_node(ij, slabidx, arg, xargs...) =
 Base.@propagate_inbounds function get_node(scalar, ij, slabidx)
     scalar[]
 end
-Base.@propagate_inbounds function get_node(field::Fields.Field, ij, slabidx)
-    #F = eltype(field)
+Base.@propagate_inbounds function get_node(
+    field::Fields.Field,
+    ij::CartesianIndex{2},
+    slabidx,
+)
     i, j = Tuple(ij)
-    h = slabidx.h
-    Fields.field_values(field)[i, j, h]
-    #Nq = 5
-    #DataLayouts.get_struct(parent(field), F, (i-1) + Nq * (j-1) + Nq*Nq*h, Nq*Nq)
-    # column(Fields.field_values(field), i,j,slabidx.h)[]
-    # TODO: get rid of slab call
-    # getindex(Fields.field_values(slab(field, slabidx)), ij)
+    Fields.field_values(field)[i, j, nothing, slabidx.v, slabidx.h]
 end
+Base.@propagate_inbounds function get_node(
+    field::Fields.Field,
+    ij::CartesianIndex{1},
+    slabidx,
+)
+    i, = Tuple(ij)
+    Fields.field_values(field)[i, nothing, nothing, slabidx.v, slabidx.h]
+end
+
+
 Base.@propagate_inbounds function get_node(
     bc::Base.Broadcast.Broadcasted,
     ij,

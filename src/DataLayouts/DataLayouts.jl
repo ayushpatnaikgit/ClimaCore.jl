@@ -286,10 +286,10 @@ function replace_basetype(data::IJFH{S, Nij}, ::Type{T}) where {S, Nij, T}
     return IJFH{S′, Nij}(similar(array, T))
 end
 
-@inline function Base.getindex(data::IJFH{S}, i, j, h) where {S}
+@inline function Base.getindex(data::IJFH{S}, i, j, _, _, h) where {S}
     @inbounds get_struct(parent(data), S, Val(3), CartesianIndex(i, j, 1, h))
 end
-@inline function Base.setindex!(data::IJFH{S}, val, i, j, h) where {S}
+@inline function Base.setindex!(data::IJFH{S}, val, i, j, _, _, h) where {S}
     @inbounds set_struct!(
         parent(data),
         convert(S, val),
@@ -447,6 +447,18 @@ end
     nbytes = typesize(T, SS)
     dataview = @inbounds view(array, :, (offset + 1):(offset + nbytes), :)
     IFH{SS, Ni}(dataview)
+end
+
+@inline function Base.getindex(data::IFH{S}, i, _, _, _, h) where {S}
+    @inbounds get_struct(parent(data), S, Val(2), CartesianIndex(i, 1, h))
+end
+@inline function Base.setindex!(data::IFH{S}, val, i, _, _, _, h) where {S}
+    @inbounds set_struct!(
+        parent(data),
+        convert(S, val),
+        Val(3),
+        CartesianIndex(i, 1, h),
+    )
 end
 
 # ======================
@@ -999,6 +1011,19 @@ function gather(
         nothing
     end
 end
+
+@inline function Base.getindex(data::VIJFH{S}, i, j, _, v, h) where {S}
+    @inbounds get_struct(parent(data), S, Val(4), CartesianIndex(v, i, j, 1, h))
+end
+@inline function Base.setindex!(data::VIJFH{S}, val, i, j, _, v, h) where {S}
+    @inbounds set_struct!(
+        parent(data),
+        convert(S, val),
+        Val(4),
+        CartesianIndex(v, i, j, 1, h),
+    )
+end
+
 # ======================
 # Data1DX DataLayout
 # ======================
@@ -1113,6 +1138,18 @@ end
     @boundscheck (1 <= v <= Nv) || throw(BoundsError(data, (v,)))
     dataview = @inbounds view(array, v, :, :, :)
     IFH{S, Nij}(dataview)
+end
+
+@inline function Base.getindex(data::VIFH{S}, i, _, _, v, h) where {S}
+    @inbounds get_struct(parent(data), S, Val(3), CartesianIndex(v, i, 1, h))
+end
+@inline function Base.setindex!(data::VIFH{S}, val, i, _, _, v, h) where {S}
+    @inbounds set_struct!(
+        parent(data),
+        convert(S, val),
+        Val(3),
+        CartesianIndex(v, i, 1, h),
+    )
 end
 
 # =========================================
