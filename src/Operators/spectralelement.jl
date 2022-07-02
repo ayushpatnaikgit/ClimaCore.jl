@@ -1222,7 +1222,7 @@ function apply_operator(op::Restrict{(1, 2)}, space_out, slabidx, arg)
     end
     @inbounds for j in 1:Nq_out, i in 1:Nq_out
         ij_out = CartesianIndex((i, j))
-        WJ_out = get_local_geometry(space_out, ij_out, slabidx)
+        WJ_out = get_local_geometry(space_out, ij_out, slabidx).WJ
         slab_data_out[i, j] = RecursiveApply.rdiv(
             RecursiveApply.rmatmul2(ImatT, temp, i, j),
             WJ_out,
