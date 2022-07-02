@@ -305,14 +305,32 @@ end
 
 Base.@propagate_inbounds function get_local_geometry(
     space::Spaces.AbstractSpectralElementSpace,
-    ij,
+    ij::CartesianIndex{1},
+    slabidx,
+)
+    i, = Tuple(ij)
+    h = slabidx.h
+    if space isa Spaces.FaceExtrudedFiniteDifferenceSpace
+        v = slabidx.v + half
+    else
+        v = slabidx.v
+    end
+    Spaces.local_geometry_data(local_geometry)[i, j, nothing, v, h]
+end
+Base.@propagate_inbounds function get_local_geometry(
+    space::Spaces.AbstractSpectralElementSpace,
+    ij::CartesianIndex{2},
     slabidx,
 )
     i, j = Tuple(ij)
     h = slabidx.h
-    space.local_geometry[i, j, h]
+    if space isa Spaces.FaceExtrudedFiniteDifferenceSpace
+        v = slabidx.v + half
+    else
+        v = slabidx.v
+    end
+    Spaces.local_geometry_data(local_geometry)[i, j, nothing, v, h]
 end
-
 
 Base.@propagate_inbounds function set_node!(
     field::Fields.Field,
