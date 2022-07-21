@@ -154,7 +154,6 @@ Operators.Operator2Stencil(op::CurriedTwoArgOperator) =
         @test_throws ArgumentError Operators.Operator2Stencil(op).(a)
     end
 
-    apply = Operators.ApplyStencil()
 
     apply_configs = (
         (a_FS, a_FS, (ops_F2C_S2S..., ops_F2C_S2V...)),
@@ -164,40 +163,44 @@ Operators.Operator2Stencil(op::CurriedTwoArgOperator) =
     )
 
     compressed_keys(op) = nameof(typeof(op))
-    success_tabs = Dict()
-    for (a0, a1, op1s) in apply_configs
-        for op1 in op1s
-            success_tabs[compressed_keys(op1)] = NaN
-        end
+
+    function apply_single_stencil(a0, a1, op1)
+        apply = Operators.ApplyStencil()
+        stencil_op1 = Operators.Operator2Stencil(op1)
+        applied_stencil_op = apply.(stencil_op1.(a1), a0)
+        p = @allocated @. applied_stencil_op = apply.(stencil_op1.(a1), a0)
+        return p
     end
 
-    for (a0, a1, op1s) in apply_configs
-        for op1 in op1s
-            stencil_op1 = Operators.Operator2Stencil(op1)
-            applied_stencil_op = apply.(stencil_op1.(a1), a0) # compile
-            p = @allocated applied_stencil_op = apply.(stencil_op1.(a1), a0)
-            success_tabs[compressed_keys(op1)] = p
+    function apply_all_stencils(apply_configs)
+        success_tabs = Dict()
+        for (a0, a1, op1s) in apply_configs
+            for op1 in op1s
+                success_tabs[compressed_keys(op1)] = apply_single_stencil(a0, a1, op1)
+            end
         end
+        return success_tabs
     end
 
-    @test_broken success_tabs[:RightBiasedC2F] == 0        # p = 259392
-    @test_broken success_tabs[:InterpolateC2F] == 0        # p = 560064
-    @test_broken success_tabs[:CurriedTwoArgOperator] == 0 # p = 677968
-    @test_broken success_tabs[:GradientF2C] == 0           # p = 140160
-    @test_broken success_tabs[:DivergenceF2C] == 0         # p = 140160
-    @test_broken success_tabs[:LeftBiasedC2F] == 0         # p = 259392
-    @test_broken success_tabs[:DivergenceC2F] == 0         # p = 560064
-    @test_broken success_tabs[:GradientC2F] == 0           # p = 560064
-    @test_broken success_tabs[:CurlC2F] == 0               # p = 560064
-    @test_broken success_tabs[:InterpolateF2C] == 0        # p = 8832
-    @test_broken success_tabs[:LeftBiasedF2C] == 0         # p = 74496
-    @test_broken success_tabs[:RightBiasedF2C] == 0        # p = 74496
+    success_tabs = apply_all_stencils(apply_configs)
+
+    @test success_tabs[:RightBiasedC2F] == 0
+    @test success_tabs[:InterpolateC2F] == 0
+    @test success_tabs[:CurriedTwoArgOperator] == 0
+    @test success_tabs[:GradientF2C] == 0
+    @test success_tabs[:DivergenceF2C] == 0
+    @test success_tabs[:LeftBiasedC2F] == 0
+    @test success_tabs[:DivergenceC2F] == 0
+    @test success_tabs[:GradientC2F] == 0
+    @test success_tabs[:CurlC2F] == 0
+    @test success_tabs[:InterpolateF2C] == 0
+    @test success_tabs[:LeftBiasedF2C] == 0
+    @test success_tabs[:RightBiasedF2C] == 0
 
     # for k in keys(success_tabs) # for debugging
     #     @show k, success_tabs[k]
     # end
 
-    compose = Operators.ComposeStencils()
     apply_configs = (
         (a_FS, a_FS, a_CS, ops_F2C_S2S, (ops_C2F_S2S..., ops_C2F_S2V...)),
         (a_CS, a_CS, a_FS, ops_C2F_S2S, (ops_F2C_S2S..., ops_F2C_S2V...)),
@@ -210,91 +213,94 @@ Operators.Operator2Stencil(op::CurriedTwoArgOperator) =
     )
 
     compressed_keys(op1, op2) = (nameof(typeof(op1)), nameof(typeof(op2)))
-    success_compose_tabs = Dict()
-    for (a0, a1, a2, op1s, op2s) in apply_configs
-        for op1 in op1s
-            for op2 in op2s
-                success_compose_tabs[compressed_keys(op1, op2)] = NaN
-            end
-        end
+
+    function apply_single_composed_stencils(a0, a1, a2, op1, op2)
+        compose = Operators.ComposeStencils()
+        apply = Operators.ApplyStencil()
+        stencil_op1 = Operators.Operator2Stencil(op1)
+        stencil_op2 = Operators.Operator2Stencil(op2)
+        applied_stencil_op = apply.(compose.(stencil_op2.(a2), stencil_op1.(a1)), a0) # compile
+        p = @allocated @. applied_stencil_op = apply.(compose.(stencil_op2.(a2), stencil_op1.(a1)), a0)
+        return p
     end
 
-    for (a0, a1, a2, op1s, op2s) in apply_configs
-        for op1 in op1s
-            for op2 in op2s
-                stencil_op1 = Operators.Operator2Stencil(op1)
-                stencil_op2 = Operators.Operator2Stencil(op2)
-                applied_stencil_op = apply.(compose.(stencil_op2.(a2), stencil_op1.(a1)), a0) # compile
-                p = @allocated applied_stencil_op = apply.(compose.(stencil_op2.(a2), stencil_op1.(a1)), a0)
-                success_compose_tabs[compressed_keys(op1, op2)] = p
+    function apply_composed_stencils(apply_configs)
+        success_compose_tabs = Dict()
+        for (a0, a1, a2, op1s, op2s) in apply_configs
+            for op1 in op1s
+                for op2 in op2s
+                    success_compose_tabs[compressed_keys(op1, op2)] = apply_single_composed_stencils(a0, a1, a2, op1, op2)
+                end
             end
         end
+        return success_compose_tabs
     end
+    success_compose_tabs = apply_composed_stencils(apply_configs)
 
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :DivergenceF2C)] == 0          # p = 1332272
-    @test_broken success_compose_tabs[(:InterpolateC2F, :GradientF2C)] == 0                   # p = 1227712
-    @test_broken success_compose_tabs[(:RightBiasedF2C, :LeftBiasedC2F)] == 0                 # p = 645296
-    @test_broken success_compose_tabs[(:DivergenceF2C, :RightBiasedC2F)] == 0                 # p = 1260464
-    @test_broken success_compose_tabs[(:DivergenceF2C, :CurriedTwoArgOperator)] == 0          # p = 2550512
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :CurriedTwoArgOperator)] == 0  # p = 1471040
-    @test_broken success_compose_tabs[(:DivergenceC2F, :LeftBiasedF2C)] == 0                  # p = 567536
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :RightBiasedF2C)] == 0         # p = 620336
-    @test_broken success_compose_tabs[(:RightBiasedF2C, :InterpolateC2F)] == 0                # p = 1543856
-    @test_broken success_compose_tabs[(:LeftBiasedF2C, :InterpolateC2F)] == 0                 # p = 1547312
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :CurlC2F)] == 0                # p = 2550512
-    @test_broken success_compose_tabs[(:DivergenceC2F, :GradientF2C)] == 0                    # p = 1158592
-    @test_broken success_compose_tabs[(:DivergenceC2F, :InterpolateF2C)] == 0                 # p = 1158512
-    @test_broken success_compose_tabs[(:InterpolateF2C, :InterpolateC2F)] == 0                # p = 1758128
-    @test_broken success_compose_tabs[(:LeftBiasedF2C, :LeftBiasedC2F)] == 0                  # p = 987440
-    @test_broken success_compose_tabs[(:RightBiasedF2C, :CurriedTwoArgOperator)] == 0         # p = 1714160
-    @test_broken success_compose_tabs[(:RightBiasedC2F, :LeftBiasedF2C)] == 0                 # p = 208112
-    @test_broken success_compose_tabs[(:RightBiasedC2F, :CurriedTwoArgOperator)] == 0         # p = 834608
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :InterpolateF2C)] == 0         # p = 1332272
-    @test_broken success_compose_tabs[(:RightBiasedF2C, :GradientC2F)] == 0                   # p = 1543856
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :GradientC2F)] == 0            # p = 2550512
-    @test_broken success_compose_tabs[(:DivergenceC2F, :RightBiasedF2C)] == 0                 # p = 567536
-    @test_broken success_compose_tabs[(:InterpolateF2C, :LeftBiasedC2F)] == 0                 # p = 811184
-    @test_broken success_compose_tabs[(:InterpolateC2F, :DivergenceF2C)] == 0                 # p = 1227712
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :RightBiasedC2F)] == 0         # p = 1372016
-    @test_broken success_compose_tabs[(:LeftBiasedC2F, :GradientF2C)] == 0                    # p = 781808
-    @test_broken success_compose_tabs[(:LeftBiasedC2F, :InterpolateF2C)] == 0                 # p = 567536
-    @test_broken success_compose_tabs[(:DivergenceF2C, :GradientC2F)] == 0                    # p = 2328448
-    @test_broken success_compose_tabs[(:DivergenceC2F, :CurriedTwoArgOperator)] == 0          # p = 1263152
-    @test_broken success_compose_tabs[(:DivergenceF2C, :DivergenceC2F)] == 0                  # p = 2328448
-    @test_broken success_compose_tabs[(:InterpolateF2C, :GradientC2F)] == 0                   # p = 1758128
-    @test_broken success_compose_tabs[(:LeftBiasedC2F, :RightBiasedF2C)] == 0                 # p = 208112
-    @test_broken success_compose_tabs[(:DivergenceF2C, :CurlC2F)] == 0                        # p = 2328448
-    @test_broken success_compose_tabs[(:RightBiasedC2F, :DivergenceF2C)] == 0                 # p = 781808
-    @test_broken success_compose_tabs[(:LeftBiasedC2F, :LeftBiasedF2C)] == 0                  # p = 546800
-    @test_broken success_compose_tabs[(:InterpolateC2F, :LeftBiasedF2C)] == 0                 # p = 567536
-    @test_broken success_compose_tabs[(:RightBiasedF2C, :CurlC2F)] == 0                       # p = 1543856
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :LeftBiasedF2C)] == 0          # p = 620336
-    @test_broken success_compose_tabs[(:LeftBiasedF2C, :GradientC2F)] == 0                    # p = 1547312
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :LeftBiasedC2F)] == 0          # p = 1375472
-    @test_broken success_compose_tabs[(:InterpolateF2C, :RightBiasedC2F)] == 0                # p = 811184
-    @test_broken success_compose_tabs[(:InterpolateF2C, :DivergenceC2F)] == 0                 # p = 1758128
-    @test_broken success_compose_tabs[(:RightBiasedF2C, :DivergenceC2F)] == 0                 # p = 1543856
-    @test_broken success_compose_tabs[(:RightBiasedC2F, :InterpolateF2C)] == 0                # p = 567536
-    @test_broken success_compose_tabs[(:LeftBiasedF2C, :DivergenceC2F)] == 0                  # p = 1547312
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :InterpolateC2F)] == 0         # p = 2550512
-    @test_broken success_compose_tabs[(:InterpolateC2F, :InterpolateF2C)] == 0                # p = 1227632
-    @test_broken success_compose_tabs[(:LeftBiasedF2C, :RightBiasedC2F)] == 0                 # p = 645296
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :DivergenceC2F)] == 0          # p = 2550512
-    @test_broken success_compose_tabs[(:DivergenceF2C, :LeftBiasedC2F)] == 0                  # p = 1263920
-    @test_broken success_compose_tabs[(:RightBiasedC2F, :RightBiasedF2C)] == 0                # p = 546800
-    @test_broken success_compose_tabs[(:InterpolateF2C, :CurlC2F)] == 0                       # p = 1758128
-    @test_broken success_compose_tabs[(:LeftBiasedF2C, :CurlC2F)] == 0                        # p = 1547312
-    @test_broken success_compose_tabs[(:InterpolateC2F, :RightBiasedF2C)] == 0                # p = 567536
-    @test_broken success_compose_tabs[(:LeftBiasedF2C, :CurriedTwoArgOperator)] == 0          # p = 1717616
-    @test_broken success_compose_tabs[(:LeftBiasedC2F, :DivergenceF2C)] == 0                  # p = 781808
-    @test_broken success_compose_tabs[(:DivergenceF2C, :InterpolateC2F)] == 0                 # p = 2328448
-    @test_broken success_compose_tabs[(:InterpolateF2C, :CurriedTwoArgOperator)] == 0         # p = 1980272
-    @test_broken success_compose_tabs[(:InterpolateC2F, :CurriedTwoArgOperator)] == 0         # p = 1332272
-    @test_broken success_compose_tabs[(:LeftBiasedC2F, :CurriedTwoArgOperator)] == 0          # p = 834608
-    @test_broken success_compose_tabs[(:RightBiasedC2F, :GradientF2C)] == 0                   # p = 781808
-    @test_broken success_compose_tabs[(:CurriedTwoArgOperator, :GradientF2C)] == 0            # p = 1332272
-    @test_broken success_compose_tabs[(:RightBiasedF2C, :RightBiasedC2F)] == 0                # p = 987440
-    @test_broken success_compose_tabs[(:DivergenceC2F, :DivergenceF2C)] == 0                  # p = 1158592
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :DivergenceF2C)] == 0
+    @test success_compose_tabs[(:InterpolateC2F, :GradientF2C)] == 0
+    @test success_compose_tabs[(:RightBiasedF2C, :LeftBiasedC2F)] == 0
+    @test success_compose_tabs[(:DivergenceF2C, :RightBiasedC2F)] == 0
+    @test success_compose_tabs[(:DivergenceF2C, :CurriedTwoArgOperator)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :CurriedTwoArgOperator)] == 0
+    @test success_compose_tabs[(:DivergenceC2F, :LeftBiasedF2C)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :RightBiasedF2C)] == 0
+    @test success_compose_tabs[(:RightBiasedF2C, :InterpolateC2F)] == 0
+    @test success_compose_tabs[(:LeftBiasedF2C, :InterpolateC2F)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :CurlC2F)] == 0
+    @test success_compose_tabs[(:DivergenceC2F, :GradientF2C)] == 0
+    @test success_compose_tabs[(:DivergenceC2F, :InterpolateF2C)] == 0
+    @test success_compose_tabs[(:InterpolateF2C, :InterpolateC2F)] == 0
+    @test success_compose_tabs[(:LeftBiasedF2C, :LeftBiasedC2F)] == 0
+    @test success_compose_tabs[(:RightBiasedF2C, :CurriedTwoArgOperator)] == 0
+    @test success_compose_tabs[(:RightBiasedC2F, :LeftBiasedF2C)] == 0
+    @test success_compose_tabs[(:RightBiasedC2F, :CurriedTwoArgOperator)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :InterpolateF2C)] == 0
+    @test success_compose_tabs[(:RightBiasedF2C, :GradientC2F)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :GradientC2F)] == 0
+    @test success_compose_tabs[(:DivergenceC2F, :RightBiasedF2C)] == 0
+    @test success_compose_tabs[(:InterpolateF2C, :LeftBiasedC2F)] == 0
+    @test success_compose_tabs[(:InterpolateC2F, :DivergenceF2C)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :RightBiasedC2F)] == 0
+    @test success_compose_tabs[(:LeftBiasedC2F, :GradientF2C)] == 0
+    @test success_compose_tabs[(:LeftBiasedC2F, :InterpolateF2C)] == 0
+    @test success_compose_tabs[(:DivergenceF2C, :GradientC2F)] == 0
+    @test success_compose_tabs[(:DivergenceC2F, :CurriedTwoArgOperator)] == 0
+    @test success_compose_tabs[(:DivergenceF2C, :DivergenceC2F)] == 0
+    @test success_compose_tabs[(:InterpolateF2C, :GradientC2F)] == 0
+    @test success_compose_tabs[(:LeftBiasedC2F, :RightBiasedF2C)] == 0
+    @test success_compose_tabs[(:DivergenceF2C, :CurlC2F)] == 0
+    @test success_compose_tabs[(:RightBiasedC2F, :DivergenceF2C)] == 0
+    @test success_compose_tabs[(:LeftBiasedC2F, :LeftBiasedF2C)] == 0
+    @test success_compose_tabs[(:InterpolateC2F, :LeftBiasedF2C)] == 0
+    @test success_compose_tabs[(:RightBiasedF2C, :CurlC2F)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :LeftBiasedF2C)] == 0
+    @test success_compose_tabs[(:LeftBiasedF2C, :GradientC2F)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :LeftBiasedC2F)] == 0
+    @test success_compose_tabs[(:InterpolateF2C, :RightBiasedC2F)] == 0
+    @test success_compose_tabs[(:InterpolateF2C, :DivergenceC2F)] == 0
+    @test success_compose_tabs[(:RightBiasedF2C, :DivergenceC2F)] == 0
+    @test success_compose_tabs[(:RightBiasedC2F, :InterpolateF2C)] == 0
+    @test success_compose_tabs[(:LeftBiasedF2C, :DivergenceC2F)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :InterpolateC2F)] == 0
+    @test success_compose_tabs[(:InterpolateC2F, :InterpolateF2C)] == 0
+    @test success_compose_tabs[(:LeftBiasedF2C, :RightBiasedC2F)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :DivergenceC2F)] == 0
+    @test success_compose_tabs[(:DivergenceF2C, :LeftBiasedC2F)] == 0
+    @test success_compose_tabs[(:RightBiasedC2F, :RightBiasedF2C)] == 0
+    @test success_compose_tabs[(:InterpolateF2C, :CurlC2F)] == 0
+    @test success_compose_tabs[(:LeftBiasedF2C, :CurlC2F)] == 0
+    @test success_compose_tabs[(:InterpolateC2F, :RightBiasedF2C)] == 0
+    @test success_compose_tabs[(:LeftBiasedF2C, :CurriedTwoArgOperator)] == 0
+    @test success_compose_tabs[(:LeftBiasedC2F, :DivergenceF2C)] == 0
+    @test success_compose_tabs[(:DivergenceF2C, :InterpolateC2F)] == 0
+    @test success_compose_tabs[(:InterpolateF2C, :CurriedTwoArgOperator)] == 0
+    @test success_compose_tabs[(:InterpolateC2F, :CurriedTwoArgOperator)] == 0
+    @test success_compose_tabs[(:LeftBiasedC2F, :CurriedTwoArgOperator)] == 0
+    @test success_compose_tabs[(:RightBiasedC2F, :GradientF2C)] == 0
+    @test success_compose_tabs[(:CurriedTwoArgOperator, :GradientF2C)] == 0
+    @test success_compose_tabs[(:RightBiasedF2C, :RightBiasedC2F)] == 0
+    @test success_compose_tabs[(:DivergenceC2F, :DivergenceF2C)] == 0
 
     # for k in keys(success_tabs) # for debugging
     #     @show k, success_tabs[k]

@@ -109,11 +109,13 @@ Meshes.linearindices
 
 ## Topologies
 A `Topology` determines the ordering and connections between elements of a mesh.
+![Space-filling curve element ordering for a cubed sphere mesh](cubedsphere_spacefillingcurve.png)
 ### Types
 ```@docs
 Topologies.AbstractTopology
 Topologies.IntervalTopology
 Topologies.Topology2D
+Topologies.spacefillingcurve
 ```
 
 ### Interfaces
@@ -194,7 +196,6 @@ RecursiveApply.tuplemap
 
 ## Fields
 
-
 ```@docs
 Fields.Field
 Fields.coordinate_field
@@ -205,6 +206,8 @@ Base.sum(::Fields.Field)
 Fields.Statistics.mean(::Fields.Field)
 Fields.LinearAlgebra.norm(::Fields.Field)
 Fields.set!
+Fields.ColumnIndex
+Fields.bycolumn
 ```
 
 ## Limiters
@@ -222,4 +225,22 @@ Limiters.compute_element_bounds!
 Limiters.compute_neighbor_bounds_local!
 Limiters.compute_neighbor_bounds_ghost!
 Limiters.apply_limit_slab!
+```
+
+## InputOutput
+
+### Writers
+```@docs
+InputOutput.HDF5Writer
+InputOutput.write!
+```
+
+### Readers
+```
+InputOutput.HDF5Reader
+InputOutput.read_domain
+InputOutput.read_mesh
+InputOutput.read_topology
+InputOutput.read_space
+InputOutput.read_field
 ```

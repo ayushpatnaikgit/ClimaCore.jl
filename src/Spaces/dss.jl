@@ -62,7 +62,7 @@ end
     arg::Geometry.CartesianVector,
     local_geometry::Geometry.LocalGeometry,
     weight,
-) where {T, N} = arg * weight
+) = arg * weight
 @inline dss_transform(
     arg::Geometry.AxisTensor{T, N, <:Tuple{Vararg{Geometry.LocalAxis}}},
     local_geometry::Geometry.LocalGeometry,
@@ -72,7 +72,7 @@ end
     arg::Geometry.LocalVector,
     local_geometry::Geometry.LocalGeometry,
     weight,
-) where {T, N} = arg * weight
+) = arg * weight
 @inline dss_transform(
     arg::Geometry.Covariant3Vector,
     local_geometry::Geometry.LocalGeometry,
@@ -701,24 +701,37 @@ Create the ghost buffer, if necessary, load the send buffer and start communicat
 
 Part of [`Spaces.weighted_dss!`](@ref).
 """
-function weighted_dss_start!(
+weighted_dss_start!(data, space, ghost_buffer) =
+    weighted_dss_start!(data, space, horizontal_space(space), ghost_buffer)
+
+weighted_dss_start!(
     data,
-    space::Union{ExtrudedFiniteDifferenceSpace{S, H}, H},
+    space::ExtrudedFiniteDifferenceSpace{S, H},
+    hspace,
     ghost_buffer,
-) where {S, T <: DistributedTopology2D, H <: SpectralElementSpace2D{T}}
-    topology =
-        space isa ExtrudedFiniteDifferenceSpace ?
-        space.horizontal_space.topology : space.topology
+) where {S, H <: SpectralElementSpace2D{<:DistributedTopology2D}} =
+    _weighted_dss_start!(data, space, hspace, ghost_buffer)
+
+weighted_dss_start!(
+    data,
+    space::H,
+    hspace,
+    ghost_buffer,
+) where {H <: SpectralElementSpace2D{<:DistributedTopology2D}} =
+    _weighted_dss_start!(data, space, hspace, ghost_buffer)
+
+function weighted_dss_start!(data, space, hspace, ghost_buffer)
+    return nothing
+end
+
+function _weighted_dss_start!(data, space, hspace, ghost_buffer)
+    topology = hspace.topology
     if ghost_buffer isa GhostBuffer
         # 1) copy send data to buffer
         fill_send_buffer!(topology, data, ghost_buffer)
         # 2) start communication
         ClimaComms.start(ghost_buffer.graph_context)
     end
-    return nothing
-end
-
-function weighted_dss_start!(data, space, ghost_buffer)
     return nothing
 end
 
@@ -757,13 +770,28 @@ Complete communication. Perform weighted dss for ghost faces and vertices.
 
 Part of [`Spaces.weighted_dss!`](@ref).
 """
+weighted_dss_ghost!(data, space, ghost_buffer) =
+    weighted_dss_ghost!(data, space, horizontal_space(space), ghost_buffer)
+
 function weighted_dss_ghost!(
     data,
-    space::Union{ExtrudedFiniteDifferenceSpace{S, H}, H},
+    space::ExtrudedFiniteDifferenceSpace{S, H},
+    hspace,
     ghost_buffer,
-) where {S, T <: DistributedTopology2D, H <: SpectralElementSpace2D{T}}
-    hspace =
-        space isa ExtrudedFiniteDifferenceSpace ? space.horizontal_space : space
+) where {S, H <: SpectralElementSpace2D{<:DistributedTopology2D}}
+    _weighted_dss_ghost!(data, space, hspace, ghost_buffer)
+end
+
+function weighted_dss_ghost!(
+    data,
+    space::H,
+    hspace,
+    ghost_buffer,
+) where {H <: SpectralElementSpace2D{<:DistributedTopology2D}}
+    _weighted_dss_ghost!(data, space, hspace, ghost_buffer)
+end
+
+function _weighted_dss_ghost!(data, space, hspace, ghost_buffer)
     topology = hspace.topology
     local_geometry = local_geometry_data(space)
     local_weights = hspace.local_dss_weights
@@ -803,6 +831,6 @@ function weighted_dss_ghost!(
     return data
 end
 
-function weighted_dss_ghost!(data, space, ghost_buffer)
+function weighted_dss_ghost!(data, space, hspace, ghost_buffer)
     return data
 end

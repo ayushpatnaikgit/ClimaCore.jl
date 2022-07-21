@@ -133,6 +133,13 @@ Base.axes(a::AxisTensor) = getfield(a, :axes)
 Base.axes(::Type{AxisTensor{T, N, A, S}}) where {T, N, A, S} = A.instance
 Base.size(a::AxisTensor) = map(length, axes(a))
 
+function Base.show(io::IO, a::AxisTensor{T, N, A, S}) where {T, N, A, S}
+    println(
+        io,
+        "AxisTensor{$T, $N, $A, $S}($(getfield(a, :axes)), $(getfield(a, :components)))",
+    )
+end
+
 """
     components(a::AxisTensor)
 
@@ -281,8 +288,7 @@ end
 # LinearAlgebra
 
 check_axes(::A, ::A) where {A} = nothing
-check_axes(ax1, ax2) where {A} =
-    throw(DimensionMismatch("$ax1 and $ax2 do not match"))
+check_axes(ax1, ax2) = throw(DimensionMismatch("$ax1 and $ax2 do not match"))
 
 check_dual(ax1, ax2) = _check_dual(ax1, ax2, dual(ax2))
 _check_dual(::A, _, ::A) where {A} = nothing

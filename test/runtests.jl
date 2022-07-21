@@ -4,6 +4,7 @@ using Base: operator_associativity
 # Order of tests is intended to reflect dependency order of functionality
 
 @time include("recursive.jl")
+@time include("Utilities/plushalf.jl")
 
 @time include("DataLayouts/data0d.jl")
 @time include("DataLayouts/data1d.jl")
@@ -19,7 +20,9 @@ using Base: operator_associativity
 @time include("Meshes/cubedsphere.jl")
 
 @time include("Topologies/rectangle.jl")
+@time include("Topologies/rectangle_sfc.jl")
 @time include("Topologies/cubedsphere.jl")
+@time include("Topologies/cubedsphere_sfc.jl")
 @time include("Topologies/distributed.jl")
 
 @time include("Spaces/quadrature.jl")
@@ -45,6 +48,8 @@ using Base: operator_associativity
 
 @time include("Operators/finitedifference/column.jl")
 @time include("Operators/finitedifference/opt.jl")
+@time include("Operators/finitedifference/wfact.jl")
+@time include("Operators/finitedifference/linsolve.jl")
 @time include("Operators/finitedifference/opt_examples.jl")
 # @time include("Operators/finitedifference/implicit_stencils.jl") now part of buildkite
 # @time include("Operators/finitedifference/opt_implicit_stencils.jl")
@@ -58,6 +63,9 @@ using Base: operator_associativity
 
 @time include("Limiters/limiter.jl")
 @time include("Limiters/distributed.jl")
+@time include("aqua.jl") # Code quality checks
+
+include("InputOutput/runtests_inputoutput.jl")
 
 if "CUDA" in ARGS
     @time include("gpu/cuda.jl")
