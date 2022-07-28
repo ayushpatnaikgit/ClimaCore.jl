@@ -1,7 +1,7 @@
 name = "ClimaCore"
 uuid = "d414da3d-4745-48bb-8d80-42e94e092884"
 authors = ["CliMA Contributors <clima-software@caltech.edu>"]
-version = "0.10.7"
+version = "0.10.8"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -43,6 +43,7 @@ GaussQuadrature = "0.5"
 GilbertCurves = "0.1"
 HDF5 = "0.16"
 IntervalSets = "0.5, 0.6, 0.7"
+PkgVersion = "0.1"
 RecursiveArrayTools = "2"
 RootSolvers = "0.3"
 Rotations = "1"

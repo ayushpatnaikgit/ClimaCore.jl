@@ -11,14 +11,16 @@ struct LocalGeometry{I, C <: AbstractPoint, FT, S}
     J::FT
     "Metric terms: `J` multiplied by the quadrature weights"
     WJ::FT
+    "inverse Jacobian"
+    invJ::FT
     "Partial derivatives of the map from `ξ` to `x`: `∂x∂ξ[i,j]` is ∂xⁱ/∂ξʲ"
     ∂x∂ξ::Axis2Tensor{FT, Tuple{LocalAxis{I}, CovariantAxis{I}}, S}
     "Partial derivatives of the map from `x` to `ξ`: `∂ξ∂x[i,j]` is ∂ξⁱ/∂xʲ"
     ∂ξ∂x::Axis2Tensor{FT, Tuple{ContravariantAxis{I}, LocalAxis{I}}, S}
 end
 
-LocalGeometry(coordinates, J, WJ, ∂x∂ξ) =
-    LocalGeometry(coordinates, J, WJ, ∂x∂ξ, inv(∂x∂ξ))
+@inline LocalGeometry(coordinates, J, WJ, ∂x∂ξ) =
+    LocalGeometry(coordinates, J, WJ, inv(J), ∂x∂ξ, inv(∂x∂ξ))
 
 """
     SurfaceGeometry

@@ -78,6 +78,7 @@ steps:
     agents:
       config: cpu
       queue: central
+      slurm_mem: 64GB
       slurm_ntasks: 1
 
   - label: ":computer: test implicit_stencil"
@@ -85,6 +86,15 @@ steps:
     command:
       - "julia -O0 --color=yes --check-bounds=yes --project=test test/Operators/finitedifference/implicit_stencils.jl"
       - "julia --color=yes --check-bounds=yes --project=test test/Operators/finitedifference/opt_implicit_stencils.jl"
+    agents:
+      config: cpu
+      queue: central
+      slurm_ntasks: 1
+
+  - label: ":computer: Column performance benchmarks"
+    key: "cpu_column_perf_bm"
+    command:
+      - "julia --color=yes --project=test test/Operators/finitedifference/column_benchmark.jl"
     agents:
       config: cpu
       queue: central
