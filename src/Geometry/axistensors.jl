@@ -158,8 +158,11 @@ Base.axes(a::AxisTensor) = getfield(a, :axes)
 Base.axes(::Type{AxisTensor{T, N, A, S}}) where {T, N, A, S} = A.instance
 Base.size(a::AxisTensor) = map(length, axes(a))
 
+Base.rand(::Type{AxisTensor{T, N, A, S}}) where {T, N, A, S} =
+    AxisTensor{T, N, A, S}(A.instance, rand(S))
+
 function Base.show(io::IO, a::AxisTensor{T, N, A, S}) where {T, N, A, S}
-    println(
+    print(
         io,
         "AxisTensor{$T, $N, $A, $S}($(getfield(a, :axes)), $(getfield(a, :components)))",
     )

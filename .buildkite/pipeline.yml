@@ -81,10 +81,27 @@ steps:
       slurm_mem: 64GB
       slurm_ntasks: 1
 
-  - label: ":computer: test implicit_stencil"
-    key: "cpu_implicit_stencil"
+  - label: ":computer: test implicit_stencil Float32"
+    key: "cpu_implicit_stencil_float32"
     command:
-      - "julia -O0 --color=yes --check-bounds=yes --project=test test/Operators/finitedifference/implicit_stencils.jl"
+      - "julia -O0 --color=yes --check-bounds=yes --project=test test/Operators/finitedifference/implicit_stencils.jl --float_type Float32"
+    agents:
+      config: cpu
+      queue: central
+      slurm_ntasks: 1
+
+  - label: ":computer: test implicit_stencil Float64"
+    key: "cpu_implicit_stencil_float64"
+    command:
+      - "julia -O0 --color=yes --check-bounds=yes --project=test test/Operators/finitedifference/implicit_stencils.jl --float_type Float64"
+    agents:
+      config: cpu
+      queue: central
+      slurm_ntasks: 1
+
+  - label: ":computer: test implicit_stencil opt"
+    key: "cpu_implicit_stencil_opt"
+    command:
       - "julia --color=yes --check-bounds=yes --project=test test/Operators/finitedifference/opt_implicit_stencils.jl"
     agents:
       config: cpu
@@ -95,6 +112,15 @@ steps:
     key: "cpu_column_perf_bm"
     command:
       - "julia --color=yes --project=test test/Operators/finitedifference/column_benchmark.jl"
+    agents:
+      config: cpu
+      queue: central
+      slurm_ntasks: 1
+
+  - label: ":rocket::computer: Axis tensor conversion performance benchmarks"
+    key: "cpu_axis_tensor_conversion_perf_bm"
+    command:
+      - "julia --color=yes --project=test test/Geometry/axistensor_conversion_benchmarks.jl"
     agents:
       config: cpu
       queue: central
@@ -851,6 +877,20 @@ steps:
       - "examples/hybrid/plane/output/inertial_gravity_wave/Float32/*"
     env:
       TEST_NAME: "plane/inertial_gravity_wave"
+    agents:
+      config: cpu
+      queue: central
+      slurm_ntasks: 1
+
+  - label: ":computer: stretched 2D plane inertial gravity wave"
+    key: "cpu_stretch_inertial_gravity_wave"
+    command:
+      - "julia --color=yes --project=examples examples/hybrid/driver.jl"
+    artifact_paths:
+      - "examples/hybrid/plane/output/stretched_inertial_gravity_wave/Float32/*"
+    env:
+      TEST_NAME: "plane/inertial_gravity_wave"
+      Z_STRETCH: "true"
     agents:
       config: cpu
       queue: central
