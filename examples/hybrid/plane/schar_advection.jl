@@ -17,6 +17,7 @@ import ClimaCore:
     Hypsography
 using ClimaCore.Geometry
 using ClimaCore.Utilities: half
+using ClimaCore.Meshes: GeneralizedExponentialStretching
 
 using DiffEqCallbacks
 
@@ -34,7 +35,7 @@ const grav = 9.8 # gravitational constant
 const R_d = 287.058 # R dry (gas constant / mol mass dry air)
 const γ = 1.4 # heat capacity ratio
 const C_p = R_d * γ / (γ - 1) # heat capacity at constant pressure
-const C_v = R_d / (γ - 1) # heat capacity at constant volume
+const C_v = R_d / (γ - 1) # heat capacity at constant volumehttps://clima.github.io/Thermodynamics.jl/dev/DevDocs/
 const T_0 = 273.16 # triple point temperature
 const kinematic_viscosity = 0.0 #m²/s
 const hyperdiffusivity = 2e7 #m²/s
@@ -55,8 +56,8 @@ end
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 15,
-    zelem = 50,
+    xelem = 60,
+    zelem = 45,
     npoly = 4,
     warp_fn = warp_surface,
 )
@@ -66,6 +67,7 @@ function hvspace_2D(
         Geometry.ZPoint{FT}(zlim[2]);
         boundary_names = (:bottom, :top),
     )
+    #vertmesh = Meshes.IntervalMesh(vertdomain, GeneralizedExponentialStretching(500.0, 5000.0), nelems = zelem)
     vertmesh = Meshes.IntervalMesh(vertdomain, nelems = zelem)
     vert_face_space = Spaces.FaceFiniteDifferenceSpace(vertmesh)
 
@@ -83,7 +85,7 @@ function hvspace_2D(
     hv_face_space = Spaces.ExtrudedFiniteDifferenceSpace(
                     horzspace,
                     vert_face_space,
-                    Hypsography.ScharAdaption(), 
+                    Hypsography.LinearAdaption(), 
                     z_surface
               )
     hv_center_space =
@@ -92,7 +94,7 @@ function hvspace_2D(
 end
 
 # set up 2D domain - doubly periodic box
-hv_center_space, hv_face_space = hvspace_2D((-30000, 30000), (0, 25000))
+hv_center_space, hv_face_space = hvspace_2D((-60000, 60000), (0, 25000))
 
 Φ(z) = grav * z
 
@@ -109,7 +111,8 @@ function init_advection_over_mountain(x, z)
     θ = @. θ₀ * exp(𝒩 ^2 * z / g)
     T = @. π_exner * θ # temperature
     ρ = @. p₀ / (R_d * θ) * (π_exner)^(cp_d/R_d)
-    e = @. cv_d * (T - T_0) + Φ(z) + 50.0
+    K = norm(Geometry.UVector(10.0))^2 / 2
+    e = @. cv_d * (T - T_0) + Φ(z) + K
     ρe = @. ρ * e
     ρq = @. 0.0
     return (ρ = ρ,
@@ -150,7 +153,7 @@ energy_0 = sum(Y.Yc.ρe)
 mass_0 = sum(Y.Yc.ρ)
 
 function rayleigh_sponge(z;
-                         z_sponge=15000.0,
+                         z_sponge=10000.0,
                          z_max=25000.0,
                          α = 0.5,  # Relaxation timescale
                          τ = 0.5,
@@ -169,11 +172,7 @@ function rayleigh_sponge_x(x;
                          α = 0.5,  # Relaxation timescale
                          τ = 0.5,
                          γ = 2.0)
-    if x >= x_sponge
-        r = (x - x_sponge) / (x_max - x_sponge)
-        β_sponge = α * sinpi(τ * r)^γ
-        return β_sponge
-    elseif x <= -x_sponge
+    if abs(x) >= x_sponge
         r = (abs(x) - x_sponge) / (x_max - x_sponge)
         β_sponge = α * sinpi(τ * r)^γ
         return β_sponge
@@ -196,6 +195,8 @@ function rhs_invariant!(dY, Y, _, t)
     dρe = dY.Yc.ρe
     dρq = dY.Yc.ρq
     z = coords.z
+    fz = face_coords.z
+    fx = face_coords.x
 
     # 0) update w at the bottom
 
@@ -208,7 +209,6 @@ function rhs_invariant!(dY, Y, _, t)
     # get u_cov at first interior cell center
     # constant extrapolation to bottom face 
     # apply as boundary condition on w for interpolation operator 
-    
 
     If2c = Operators.InterpolateF2C()
     Ic2f = Operators.InterpolateC2F(
@@ -227,11 +227,14 @@ function rhs_invariant!(dY, Y, _, t)
     cw = If2c.(fw)
     fuₕ = Ic2f.(cuₕ)
 
-  #  u_1_base = Geometry.contravariant3.(Fields.level(fuₕ,half), Fields.level(Fields.local_geometry_field(hv_face_space), half))
-  #  g33 = Geometry.contravariant3.(Ref(Covariant3Vector(1)), Fields.level(Fields.local_geometry_field(hv_face_space), half)) 
-  #  u_3_base = Geometry.Covariant3Vector.(-1 .* u_1_base ./ g33)  # fw = -g^31 cuₕ/ g^33
-  #  apply_boundary_w = Operators.SetBoundaryOperator(bottom = Operators.SetValue(u_3_base))
-  #  @. fw = apply_boundary_w(fw)
+    # Calculate (-g^{31} cuₕ) == Covariant1 contribution to contravariant3
+    u_1_base = Geometry.contravariant3.(Fields.level(fuₕ,half), Fields.level(Fields.local_geometry_field(hv_face_space), half))
+    # Calculate g^{33} == Generate contravariant3 representation with only non-zero covariant3 
+    # u^3 = g^31 u_1 + g^32 u_2 + g^33 u_3
+    g33 = Geometry.contravariant3.(Ref(Covariant3Vector(1)), Fields.level(Fields.local_geometry_field(hv_face_space), half)) 
+    u_3_base = Geometry.Covariant3Vector.(-1 .* u_1_base ./ g33)  # fw = -g^31 cuₕ/ g^33
+    apply_boundary_w = Operators.SetBoundaryOperator(bottom = Operators.SetValue(u_3_base))
+    @. fw = apply_boundary_w(fw)
 
     cuw = @. Geometry.Covariant13Vector(cuₕ) + Geometry.Covariant13Vector(cw)
 
@@ -269,7 +272,6 @@ function rhs_invariant!(dY, Y, _, t)
 
     # 1.b) vertical divergence
     
-
     # Apply n ⋅ ∇(X) = F
     # n^{i} * ∂X/∂_{x^{i}} 
     # Contravariant3Vector(1) ⊗ (Flux Tensor)
@@ -307,11 +309,9 @@ function rhs_invariant!(dY, Y, _, t)
     # cross product
     # convert to contravariant
     # these will need to be modified with topography
+    
     fu¹ = @. Geometry.project(Geometry.Contravariant1Axis(), fuw) 
     fu³ = @. Geometry.project(Geometry.Contravariant3Axis(), fuw) 
-
-    Spaces.weighted_dss!(fu¹)
-    Spaces.weighted_dss!(fu³)
 
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
     @. duₕ -= If2c(fω¹ × fu³)
@@ -332,9 +332,9 @@ function rhs_invariant!(dY, Y, _, t)
 
     @. dρe -= hdiv(cuw * (cρe + cp))
     
-    #@. dρe -= vdivf2c(fw * Ic2f(cρe + cp)) # Strange Waves! 
+    @. dρe -= vdivf2c(fw * Ic2f(cρe + cp)) 
     #@. dρe -= vdivf2c(Ic2f(cρ) * f_upwind_product1(fw, (cρe + cp)/cρ)) # Upwind Approximation - First Order
-    @. dρe -= vdivf2c(Ic2f(cρ) * f_upwind_product3(fw, (cρe + cp)/cρ)) # Upwind Approximation - Third Order
+    #@. dρe -= vdivf2c(Ic2f(cρ) * f_upwind_product3(fw, (cρe + cp)/cρ)) # Upwind Approximation - Third Order
     
     @. dρe -= vdivf2c(Ic2f(cuₕ * (cρe + cp)))
     
@@ -349,46 +349,16 @@ function rhs_invariant!(dY, Y, _, t)
     fρ = @. Ic2f(cρ)
     κ₂ = kinematic_viscosity # m^2/s
 
-    ᶠ∇ᵥuₕ = @. vgradc2f(cuₕ.components.data.:1)
-    ᶜ∇ᵥw = @. ∂c(fw.components.data.:1)
-    ᶠ∇ᵥh_tot = @. vgradc2f(h_tot)
-    ᶠ∇ᵥq = @. vgradc2f(cq)
-
-    ᶜ∇ₕuₕ = @. hgrad(cuₕ.components.data.:1)
-    ᶠ∇ₕw = @. hgrad(fw.components.data.:1)
-    ᶜ∇ₕh_tot = @. hgrad(h_tot)
-    ᶜ∇ₕq = @. hgrad(cq)
-
-    hκ₂∇²uₕ = @. hwdiv(κ₂ * ᶜ∇ₕuₕ)
-    vκ₂∇²uₕ = @. vdivf2c(κ₂ * ᶠ∇ᵥuₕ)
-    hκ₂∇²w = @. hwdiv(κ₂ * ᶠ∇ₕw)
-    vκ₂∇²w = @. vdivc2f(κ₂ * ᶜ∇ᵥw)
-    hκ₂∇²h_tot = @. hwdiv(cρ * κ₂ * ᶜ∇ₕh_tot)
-    vκ₂∇²h_tot = @. vdivf2c(fρ * κ₂ * ᶠ∇ᵥh_tot)
-    hκ₂∇²q = @. hwdiv(cρ * κ₂ * ᶜ∇ₕq)
-    vκ₂∇²q = @. vdivf2c(fρ * κ₂ * ᶠ∇ᵥq)
-
-    dfw = dY.w.components.data.:1
-    dcu = dY.uₕ.components.data.:1
-
-    # Laplacian Diffusion (Uniform)
-    @. dcu += hκ₂∇²uₕ
-    @. dcu += vκ₂∇²uₕ
-    @. dfw += hκ₂∇²w
-    @. dfw += vκ₂∇²w
-    @. dρe += hκ₂∇²h_tot
-    @. dρe += vκ₂∇²h_tot
-    @. dρq += hκ₂∇²q
-    @. dρq += vκ₂∇²q
-
     # Sponge tendency
     β = @. rayleigh_sponge(z)
+    βf = @. rayleigh_sponge(fz)
     @. duₕ -= β * (uₕ - u_init)
-    @. dw -= Ic2f(β) * fw
+    @. dw -= βf * fw
     
-    β = @. rayleigh_sponge_x(coords.x)
-    @. duₕ -= β * (uₕ - u_init)
-    @. dw -= Ic2f(β) * fw
+   # β = @. rayleigh_sponge_x(coords.x)
+   # βf = @. rayleigh_sponge_x(fx)
+   # @. duₕ -= β * (uₕ - u_init)
+   # @. dw -= βf * fw
 
     Spaces.weighted_dss!(dY.Yc)
     Spaces.weighted_dss!(dY.uₕ)
@@ -401,8 +371,8 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = 1.0
-timeend = 3600.0 * 5.0
+Δt = 0.6
+timeend = 3600.0 * 10.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
@@ -432,7 +402,7 @@ ENV["GKSwstype"] = "nul"
 import Plots, ClimaCorePlots
 Plots.GRBackend()
 
-dir = "schar_advection_peak250_hypd_3rd_1km_scharadapt"
+dir = "schar_advection_peak250_hypd_fd_1km_linearadapt_bc_2Lx"
 path = joinpath(@__DIR__, "output", dir)
 mkpath(path)
 

@@ -79,7 +79,7 @@ function adapt_space!(
     cZ = If2c.(fZ)
 
     # DSS the interpolated horizontal gradients as well
-    c∇Z = If2c.(f∇Z)
+    c∇Z = grad.(cZ)
     Spaces.weighted_dss!(c∇Z)
 
     Ni, Nj, _, Nv, Nh = size(space.center_local_geometry)
@@ -106,13 +106,13 @@ function adapt_space!(
             Δz = if v == 1
                 # if this is the domain min face level compute the metric
                 # extrapolating from the bottom face level of the domain
-                2 * (cZ_column[v] - fZ_column[v])
+                fZ_column[v+1] - fZ_column[v]
             elseif v == Nv + 1
                 # if this is the domain max face level compute the metric
                 # extrapolating from the top face level of the domain
-                2 * (fZ_column[v] - cZ_column[v - 1])
+                fZ_column[v] - fZ_column[v - 1]
             else
-                cZ_column[v] - cZ_column[v - 1]
+                (fZ_column[v+1] - fZ_column[v-1]) / 2
             end
             ∂x∂ξ = reconstruct_metric(local_geom.∂x∂ξ, f∇Z_column[v], Δz)
             W = local_geom.WJ / local_geom.J
@@ -180,7 +180,6 @@ function adapt_space!(
         else
             Geometry.component.(coords, 3)
         end
-    # TODO Generalise 178 so that it works always with the last coordinate
     vertical_domain = Topologies.domain(space.vertical_topology)
     domain_max = Geometry.component(vertical_domain.coord_max, 1)
     f∇Z = Fields.Field(

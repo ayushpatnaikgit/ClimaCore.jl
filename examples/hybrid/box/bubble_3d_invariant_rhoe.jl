@@ -306,7 +306,7 @@ rhs_invariant!(dYdt, Y, ghost_buffer, 0.0);
 # run!
 using OrdinaryDiffEq
 Δt = 0.050
-prob = ODEProblem(rhs_invariant!, Y, (0.0, 700.0), ghost_buffer)
+prob = ODEProblem(rhs_invariant!, Y, (0.0, 2Δt), ghost_buffer)
 integrator = OrdinaryDiffEq.init(
     prob,
     SSPRK33(),

@@ -26,6 +26,13 @@ function adapt(::LinearAdaption, z_ref, z_s, z_top)
     z_ref + (1 - z_ref / z_top) * z_s
 end
 
+"""
+    ScharAdaption()
+
+Locate the levels by linear interpolation between the bottom and top of the domain.
+
+Ref: Schar et al (2002)
+"""
 struct ScharAdaption <: TerrainAdaption end
 
 function adapt(::ScharAdaption, z_ref, z_s, z_top)
