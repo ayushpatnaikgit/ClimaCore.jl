@@ -5,7 +5,7 @@ using ClimaCorePlots, Plots
 # Reference paper: https://rmets.onlinelibrary.wiley.com/doi/pdf/10.1002/qj.2105
 
 # Constants for switching between different experiment setups
-const is_small_scale = true
+const is_small_scale = false
 const ᶜ𝔼_name = :ρe
 const is_discrete_hydrostatic_balance = true # `false` causes large oscillations
 
@@ -38,7 +38,7 @@ const cₛ² = cp_d / cv_d * R_d * T₀ # speed of sound squared
 const ρₛ = p_0 / (R_d * T₀)        # air density at surface
 
 # TODO: Loop over all domain setups used in reference paper
-const Δx = is_small_scale ? FT(1e3) : FT(20e3)
+const Δx = is_small_scale ? FT(1e3) : FT(40e3)
 const Δz = is_small_scale ? Δx / 2 : Δx / 40
 z_elem = Int(z_max / Δz) # default 20 vertical elements
 npoly, x_elem = 1, Int(x_max / Δx) # max small-scale dt = 1.5
@@ -48,10 +48,17 @@ npoly, x_elem = 1, Int(x_max / Δx) # max small-scale dt = 1.5
 animation_duration = FT(5)
 fps = 2
 
+<<<<<<< HEAD
 # Set up mesh
 horizontal_mesh = periodic_line_mesh(; x_max, x_elem = x_elem)
 
 # Additional values required for driver
+=======
+# Values required for driver
+space =
+    ExtrudedSpace(; zmax, zelem, hspace = PeriodicLine(; xmax, xelem, npoly))
+t_end = is_small_scale ? FT(60 * 60 * 0.5) : FT(20)
+>>>>>>> b592711b88ccbba9fffadf8b8081a14b92b5eabc
 dt = is_small_scale ? FT(1.5) : FT(20)
 t_end = is_small_scale ? FT(60 * 60 * 0.5) : FT(60 * 60 * 8)
 dt_save_to_sol = t_end / (animation_duration * fps)
@@ -211,9 +218,15 @@ end
 # max_ikx = x_max / min_λx = upsampling_factor * x_elem / 2
 # max_ikz = 2 * z_max / min_λz = upsampling_factor * z_elem
 function ρfb_init_coefs(
+<<<<<<< HEAD
     upsampling_factor = 3,
     max_ikx = upsampling_factor * x_elem ÷ 2,
     max_ikz = upsampling_factor * z_elem,
+=======
+    upsampling_factor = 1,
+    max_ikx = upsampling_factor * xelem ÷ 2,
+    max_ikz = upsampling_factor * zelem,
+>>>>>>> b592711b88ccbba9fffadf8b8081a14b92b5eabc
 )
     # upsampled coordinates (more upsampling gives more accurate coefficients)
     horizontal_mesh =

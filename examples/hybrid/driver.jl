@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Test-specific definitions (may be overwritten in each test case file)
 # TODO: Allow some of these to be enironment variables or command line arguments
 upwinding_mode = :none
@@ -5,6 +6,29 @@ horizontal_mesh = nothing # must be object of type AbstractMesh
 npoly = 0
 z_max = 0
 z_elem = 0
+=======
+if !haskey(ENV, "BUILDKITE")
+    import Pkg
+    Pkg.develop(Pkg.PackageSpec(; path = dirname(dirname(@__DIR__))))
+end
+
+using Logging: global_logger
+using TerminalLoggers: TerminalLogger
+global_logger(TerminalLogger())
+
+import ClimaCore: enable_threading
+enable_threading() = true
+
+using OrdinaryDiffEq
+using DiffEqCallbacks
+using JLD2
+
+default_test_name = "plane/inertial_gravity_wave"
+test_implicit_solver = false # makes solver extremely slow when set to `true`
+
+# Definitions that are specific to each test:
+space = nothing
+>>>>>>> b592711b88ccbba9fffadf8b8081a14b92b5eabc
 t_end = 0
 dt = 0
 dt_save_to_sol = 0 # 0 means don't save to sol
