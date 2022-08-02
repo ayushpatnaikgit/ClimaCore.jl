@@ -14,7 +14,7 @@ using OrdinaryDiffEq
 using DiffEqCallbacks
 using JLD2
 
-default_test_name = "sphere/baroclinic_wave_rhoe"
+default_test_name = "plane/inertial_gravity_wave"
 test_implicit_solver = false # makes solver extremely slow when set to `true`
 
 # Definitions that are specific to each test:

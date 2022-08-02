@@ -5,7 +5,7 @@ using ClimaCorePlots, Plots
 # Reference paper: https://rmets.onlinelibrary.wiley.com/doi/pdf/10.1002/qj.2105
 
 # Constants for switching between different experiment setups
-const is_small_scale = true
+const is_small_scale = false
 const ᶜ𝔼_name = :ρe
 const is_discrete_hydrostatic_balance = true # `false` causes large oscillations
 
@@ -35,7 +35,7 @@ const cₛ² = cp_d / cv_d * R_d * T₀ # speed of sound squared
 const ρₛ = p_0 / (R_d * T₀)        # air density at surface
 
 # TODO: Loop over all domain setups used in reference paper
-const Δx = is_small_scale ? FT(1e3) : FT(20e3)
+const Δx = is_small_scale ? FT(1e3) : FT(40e3)
 const Δz = is_small_scale ? Δx / 2 : Δx / 40
 zelem = Int(zmax / Δz)
 npoly, xelem = 1, Int(xmax / Δx) # max small-scale dt = 1.5
@@ -48,7 +48,7 @@ fps = 2
 # Values required for driver
 space =
     ExtrudedSpace(; zmax, zelem, hspace = PeriodicLine(; xmax, xelem, npoly))
-t_end = is_small_scale ? FT(60 * 60 * 0.5) : FT(60 * 60 * 8)
+t_end = is_small_scale ? FT(60 * 60 * 0.5) : FT(20)
 dt = is_small_scale ? FT(1.5) : FT(20)
 dt_save_to_sol = t_end / (animation_duration * fps)
 ode_algorithm = OrdinaryDiffEq.Rosenbrock23
@@ -180,7 +180,7 @@ end
 # max_ikx = xmax / min_λx = upsampling_factor * xelem / 2
 # max_ikz = 2 * zmax / min_λz = upsampling_factor * zelem
 function ρfb_init_coefs(
-    upsampling_factor = 3,
+    upsampling_factor = 1,
     max_ikx = upsampling_factor * xelem ÷ 2,
     max_ikz = upsampling_factor * zelem,
 )
