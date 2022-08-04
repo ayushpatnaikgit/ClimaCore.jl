@@ -310,8 +310,8 @@ function rhs_invariant!(dY, Y, _, t)
     # convert to contravariant
     # these will need to be modified with topography
     
-    fu¹ = @. Geometry.project(Geometry.Contravariant1Axis(), fuw) 
-    fu³ = @. Geometry.project(Geometry.Contravariant3Axis(), fuw) 
+    fu¹ = Geometry.project.(Ref(Geometry.Contravariant1Axis()), fuw) 
+    fu³ = Geometry.project.(Ref(Geometry.Contravariant3Axis()), fuw) 
 
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
     @. duₕ -= If2c(fω¹ × fu³)
