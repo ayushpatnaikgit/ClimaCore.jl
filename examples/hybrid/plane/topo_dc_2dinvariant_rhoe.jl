@@ -25,13 +25,26 @@ function no_warp(coord)
     return FT(0) * x
 end
 
+function warp_surface(coord)   
+  x = Geometry.component(coord,1)
+  FT = eltype(x)
+  a = 20000
+  λ = 8000
+  h₀ = 6400.0 / 5
+  if abs(x) <= a
+    h = h₀ * exp(-(x/a)^2) * (cos(π*x/λ))^2
+  else
+    h = FT(0)
+  end
+end
+
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 64,
-    zelem = 32,
+    xelem = 32,
+    zelem = 20,
     npoly = 4,
-    warp_fn = no_warp,
+    warp_fn = warp_surface,
 )
     FT = Float64
     vertdomain = Domains.IntervalDomain(
@@ -92,7 +105,8 @@ function init_dry_density_current_2d(x, z)
 
     # auxiliary quantities
     r = sqrt((x - x_c)^2 / x_r^2 + (z - z_c)^2 / z_r^2)
-    θ_p = r < r_c ? 0.5 * θ_c * (1.0 + cospi(r / r_c)) : 0.0 # potential temperature perturbation
+    #θ_p = r < r_c ? 0.5 * θ_c * (1.0 + cospi(r / r_c)) : 0.0 # potential temperature perturbation
+    θ_p = 0.0
 
     θ = θ_b + θ_p # potential temperature
     π_exn = 1.0 - Φ(z) / cp_d / θ # exner function
@@ -177,9 +191,26 @@ function rhs_invariant!(dY, Y, _, t)
     dρ .-= hdiv.(cρ .* (cuw))
 
     # 1.b) vertical divergence
+    
+    # Consider, non-zero flux boundary conditions
+    x = coords.x
+    a = 20000
+    λ = 8000
+    h₀ = 6400.0 / 4
+    fprime = @. h₀ * (-2*x/a^2 * exp(-x^2/a^2)*cospi(x/λ)^2 - (2π/λ)*sinpi(x/λ)*cospi(x/λ)*exp(-x^2/a^2))
+    normfprime = @. sqrt(1 + fprime^2)
+    normal = @. -1 * Geometry.UWVector(fprime / normfprime, -1/normfprime)
+    #bflux_magnitude = @. 1000.0 * cospi(x/λ)*sinpi(x/λ)^2
+    bflux_magnitude = @. x / 20
+    bflux_vector = @. bflux_magnitude * normal
+
     vdivf2c = Operators.DivergenceF2C(
         top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
         bottom = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
+    )
+    vdivf2c_e = Operators.DivergenceF2C(
+        top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
+        bottom = Operators.SetValue(Fields.level(bflux_vector,1)),
     )
     vdivc2f = Operators.DivergenceC2F(
         top = Operators.SetValue(Geometry.Contravariant3Vector(0.0)),
@@ -233,8 +264,8 @@ function rhs_invariant!(dY, Y, _, t)
     # 3) total energy
 
     @. dρe -= hdiv(cuw * (cρe + cp))
-    @. dρe -= vdivf2c(fw * Ic2f(cρe + cp))
-    @. dρe -= vdivf2c(Ic2f(cuₕ * (cρe + cp)))
+    @. dρe -= vdivf2c_e(fw * Ic2f(cρe + cp))
+    @. dρe -= vdivf2c_e(Ic2f(cuₕ * (cρe + cp)))
 
     # Uniform 2nd order diffusion
     ∂c = Operators.GradientF2C()
@@ -254,7 +285,7 @@ function rhs_invariant!(dY, Y, _, t)
     hκ₂∇²w = @. hwdiv(κ₂ * ᶠ∇ₕw)
     vκ₂∇²w = @. vdivc2f(κ₂ * ᶜ∇ᵥw)
     hκ₂∇²h_tot = @. hwdiv(cρ * κ₂ * ᶜ∇ₕh_tot)
-    vκ₂∇²h_tot = @. vdivf2c(fρ * κ₂ * ᶠ∇ᵥh_tot)
+    vκ₂∇²h_tot = @. vdivf2c_e(fρ * κ₂ * ᶠ∇ᵥh_tot)
 
     dfw = dY.w.components.data.:1
     dcu = dY.uₕ.components.data.:1
@@ -279,8 +310,8 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-timeend = 900.0
-Δt = 0.3
+timeend = 1800.0
+Δt = 0.1
 prob = ODEProblem(rhs_invariant!, Y, (0.0, timeend))
 integrator = OrdinaryDiffEq.init(
     prob,
