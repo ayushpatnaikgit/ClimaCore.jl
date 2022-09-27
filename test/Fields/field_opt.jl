@@ -7,6 +7,7 @@ import ClimaCore.DataLayouts: IJFH
 import ClimaCore:
     Fields, slab, Domains, Topologies, Meshes, Operators, Spaces, Geometry
 
+using FastBroadcast
 using LinearAlgebra: norm
 using Statistics: mean
 using ForwardDiff
@@ -105,5 +106,30 @@ end
         allocs_test2!(Y)
         p = @allocated allocs_test2!(Y)
         @test_broken p == 0
+    end
+end
+
+@testset "Allocations in @.. broadcasting" begin
+    function allocs_test_field!(Y1, dt, Y2)
+        x = Y1.x
+        @.. x += 2.0
+        nothing
+    end
+    function allocs_test_field_vector!(Y1, dt, Y2, Y3)
+        @.. Y1 = Y2 + dt * Y3
+        nothing
+    end
+    FT = Float32
+    for space in all_spaces(FT)
+        Y1 = FieldFromNamedTuple(space, (; x = FT(2.0), y = FT(2.0), z = FT(2.0)))
+        Y2 = FieldFromNamedTuple(space, (; x = FT(2.0), y = FT(2.0), z = FT(2.0)))
+        Y3 = FieldFromNamedTuple(space, (; x = FT(2.0), y = FT(2.0), z = FT(2.0)))
+        dt = FT(2.0)
+        allocs_test_field!(Y1, dt, Y2)
+        p = @allocated allocs_test_field!(Y1, dt, Y2)
+        @test p == 0
+        allocs_test_field_vector!(Y1, dt, Y2, Y3)
+        p = @allocated allocs_test_field_vector!(Y1, dt, Y2, Y3)
+        @test p == 0
     end
 end
