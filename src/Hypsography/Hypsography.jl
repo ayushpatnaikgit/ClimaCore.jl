@@ -110,13 +110,15 @@ function ExtrudedFiniteDifferenceSpace(
             Δz = if v == 1
                 # if this is the domain min face level compute the metric
                 # extrapolating from the bottom face level of the domain
-                2 * (cZ_column[v] - fZ_column[v])
+                #2 * (cZ_column[v] - fZ_column[v]) #ORIGINAL
+                (fZ_column[v+1] - fZ_column[1])
             elseif v == Nv + 1
                 # if this is the domain max face level compute the metric
                 # extrapolating from the top face level of the domain
-                2 * (fZ_column[v] - cZ_column[v - 1])
+                (fZ_column[v] - fZ_column[v-1])
             else
-                cZ_column[v] - cZ_column[v - 1]
+                #cZ_column[v] - cZ_column[v - 1] # ORIGINAL
+                (fZ_column[v+1] - fZ_column[v-1]) / 2 # TEST
             end
             ∂x∂ξ = reconstruct_metric(local_geom.∂x∂ξ, f∇Z_column[v], Δz)
             W = local_geom.WJ / local_geom.J
