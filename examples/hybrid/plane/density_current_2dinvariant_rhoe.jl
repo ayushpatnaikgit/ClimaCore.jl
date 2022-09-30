@@ -213,11 +213,12 @@ function rhs_invariant!(dY, Y, _, t)
         bottom = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
         top = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
     )
-    @. dw -= vgradc2f(cp) / Ic2f(cρ)
+    cE = @. (norm(cuw)^2) / 2
+    BW = Operators.SetBoundaryOperator(bottom = Operators.SetValue(Geometry.Covariant3Vector(0.0)), 
+                                       top = Operators.SetValue(Geometry.Covariant3Vector(0.0)))
+    @. dw -= BW(vgradc2f(cp) / Ic2f(cρ) + vgradc2f(cE + Φ(z)))
 
-    cE = @. (norm(cuw)^2) / 2 + Φ(z)
-    @. duₕ -= hgrad(cE)
-    @. dw -= vgradc2f(cE)
+    @. duₕ -= hgrad(cE + Φ(z))
 
     # 3) total energy
 

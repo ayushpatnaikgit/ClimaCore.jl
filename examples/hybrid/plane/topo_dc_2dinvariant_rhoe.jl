@@ -19,6 +19,17 @@ using Logging: global_logger
 using TerminalLoggers: TerminalLogger
 global_logger(TerminalLogger())
 
+function warp_surface(coord)
+  # Parameters from GMD-9-2007-2016
+  # Specification for Agnesi Mountain following 
+  # Ulrich and Guerra [2016 GMD]
+  x = Geometry.component(coord,1)
+  FT = eltype(x)
+  ac = 10000
+  hc = 2000.0
+  return hc / (1 + (x/ac)^2)
+end
+
 function no_warp(coord)
     x = Geometry.component(coord, 1)
     FT = eltype(x)
@@ -31,7 +42,7 @@ function hvspace_2D(
     xelem = 64,
     zelem = 32,
     npoly = 4,
-    warp_fn = no_warp,
+    warp_fn = warp_surface,
 )
     FT = Float64
     vertdomain = Domains.IntervalDomain(
@@ -309,14 +320,26 @@ anim = Plots.@animate for u in sol.u
 end
 Plots.mp4(anim, joinpath(path, "total_energy.mp4"), fps = 20)
 
+Ic2f = Operators.InterpolateC2F(
+  bottom = Operators.Extrapolate(),
+  top = Operators.Extrapolate(),
+)
 If2c = Operators.InterpolateF2C()
 anim = Plots.@animate for u in sol.u
-    ᶜuw = @. Geometry.Covariant13Vector(u.uₕ) +
-       Geometry.Covariant13Vector(If2c(u.w))
-    w = @. Geometry.project(Geometry.WAxis(), ᶜuw)
+    ᶠuw = @. Geometry.Covariant13Vector(Ic2f.(u.uₕ)) +
+       Geometry.Covariant13Vector(u.w)
+    w = @. Geometry.project(Geometry.WAxis(), ᶠuw)
     Plots.plot(w)
 end
 Plots.mp4(anim, joinpath(path, "vel_w.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    ᶠuw = @. Geometry.Covariant13Vector(Ic2f.(u.uₕ)) +
+       Geometry.Covariant13Vector(u.w)
+    w = @. Geometry.project(Geometry.WAxis(), ᶠuw)
+    Plots.plot(Fields.level(w, ClimaCore.Utilities.half))
+end
+Plots.mp4(anim, joinpath(path, "vel_w_level1.mp4"), fps = 20)
 
 anim = Plots.@animate for u in sol.u
     ᶜuw = @. Geometry.Covariant13Vector(u.uₕ) +
@@ -325,6 +348,15 @@ anim = Plots.@animate for u in sol.u
     Plots.plot(u)
 end
 Plots.mp4(anim, joinpath(path, "vel_u.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    ᶠu = @. Geometry.Covariant13Vector(Ic2f(u.uₕ))
+    ᶠw = @. Geometry.Covariant13Vector(u.w)
+    ᶠuw = @. ᶠu + ᶠw
+    w = @. Geometry.project(Geometry.Contravariant3Axis(), ᶠu) +  Geometry.project(Geometry.Contravariant3Axis(), ᶠw) 
+    Plots.plot(Fields.level(w, ClimaCore.Utilities.half))
+end
+Plots.mp4(anim, joinpath(path, "contravariant3_level1.mp4"), fps = 20)
 
 # post-processing
 Es = [sum(u.Yc.ρe) for u in sol.u]

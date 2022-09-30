@@ -22,8 +22,8 @@ Logging.global_logger(TerminalLoggers.TerminalLogger())
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    helem = 64,
-    velem = 32,
+    helem = 128,
+    velem = 64,
     npoly = 4,
 )
     FT = Float64
