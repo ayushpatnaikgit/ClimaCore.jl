@@ -1,4 +1,5 @@
 using Test
+using OrderedCollections
 using StaticArrays, IntervalSets
 import ClimaCore
 import ClimaCore.Utilities: PlusHalf
@@ -16,6 +17,21 @@ function FieldFromNamedTuple(space, nt::NamedTuple)
 end
 
 include(joinpath(@__DIR__, "util_spaces.jl"))
+
+fc_index(
+    i,
+    ::Union{
+        Spaces.FaceExtrudedFiniteDifferenceSpace,
+        Spaces.FaceFiniteDifferenceSpace,
+    },
+) = PlusHalf(i)
+fc_index(
+    i,
+    ::Union{
+        Spaces.CenterExtrudedFiniteDifferenceSpace,
+        Spaces.CenterFiniteDifferenceSpace,
+    },
+) = i
 
 function spectral_space_2D(; n1 = 1, n2 = 1, Nij = 4)
     domain = Domains.RectangleDomain(
@@ -309,21 +325,6 @@ end
     @test isapprox(Fields.field_values(add_field)[], FT(2π))
 end
 
-fc_index(
-    i,
-    ::Union{
-        Spaces.FaceExtrudedFiniteDifferenceSpace,
-        Spaces.FaceFiniteDifferenceSpace,
-    },
-) = PlusHalf(i)
-fc_index(
-    i,
-    ::Union{
-        Spaces.CenterExtrudedFiniteDifferenceSpace,
-        Spaces.CenterFiniteDifferenceSpace,
-    },
-) = i
-
 @testset "Level" begin
     FT = Float64
     for space in all_spaces(FT)
@@ -361,6 +362,51 @@ end
         end
 
     end
+end
+
+@testset "(Domain/Column)-surface broadcasting" begin
+    FT = Float64
+    function domain_surface_bc!(x, ᶜz_surf, ᶜx_surf)
+        @. x = x + ᶜz_surf
+        # exercises broadcast_shape(PointSpace, PointSpace)
+        @. x = x + (ᶜz_surf * ᶜx_surf)
+        nothing
+    end
+    function column_surface_bc!(x, ᶜz_surf, ᶜx_surf)
+        Fields.bycolumn(axes(x)) do colidx
+            @. x[colidx] = x[colidx] + ᶜz_surf[colidx]
+            # exercises broadcast_shape(PointSpace, PointSpace)
+            @. x[colidx] = x[colidx] + (ᶜz_surf[colidx] * ᶜx_surf[colidx])
+        end
+        nothing
+    end
+    for space in all_spaces(FT)
+        # Filter out spaces without z coordinates:
+        :z in propertynames(Spaces.coordinates_data(space)) || continue
+        Y = FieldFromNamedTuple(space, (; x = FT(1)))
+        ᶜz_surf =
+            Spaces.level(Fields.coordinate_field(Y.x).z, fc_index(1, space))
+        ᶜx_surf = Spaces.level(Y.x, fc_index(1, space))
+
+        # Still need to define broadcast rules for surface planes with 3D domains
+        if nameof(typeof(space)) == :ExtrudedFiniteDifferenceSpace
+            @test_broken begin
+                try
+                    domain_surface_bc!(Y.x, ᶜz_surf)
+                    true
+                catch
+                    false
+                end
+            end
+        else
+            domain_surface_bc!(Y.x, ᶜz_surf, ᶜx_surf)
+        end
+        # Skip spaces incompatible with Fields.bycolumn:
+        bycolumnable(space) || continue
+        column_surface_bc!(Y.x, ᶜz_surf, ᶜx_surf)
+        nothing
+    end
+    nothing
 end
 
 @testset "Broadcasting same spaces different instances" begin
@@ -467,4 +513,133 @@ end
     @test all(==(1.0), parent(C))
     C .= Ref(zero(eltype(C)))
     @test all(==(0.0), parent(C))
+end
+function integrate_bycolumn!(∫y, Y)
+    Fields.bycolumn(axes(Y.y)) do colidx
+        Operators.column_integral_definite!(∫y[colidx], Y.y[colidx])
+        nothing
+    end
+end
+
+"""
+    convergence_rate(err, Δh)
+
+Estimate convergence rate given vectors `err` and `Δh`
+
+    err = C Δh^p+ H.O.T
+    err_k ≈ C Δh_k^p
+    err_k/err_m ≈ Δh_k^p/Δh_m^p
+    log(err_k/err_m) ≈ log((Δh_k/Δh_m)^p)
+    log(err_k/err_m) ≈ p*log(Δh_k/Δh_m)
+    log(err_k/err_m)/log(Δh_k/Δh_m) ≈ p
+
+"""
+convergence_rate(err, Δh) =
+    [log(err[i] / err[i - 1]) / log(Δh[i] / Δh[i - 1]) for i in 2:length(Δh)]
+
+@testset "Definite column integrals bycolumn" begin
+    FT = Float64
+    results = OrderedCollections.OrderedDict()
+    ∫y_analytic = 1 - cos(1) - (0 - cos(0))
+    function col_field_copy(y)
+        col_copy = similar(y[Fields.ColumnIndex((1, 1), 1)])
+        return Fields.Field(Fields.field_values(col_copy), axes(col_copy))
+    end
+    for zelem in (2^2, 2^3, 2^4, 2^5)
+        for space in all_spaces(FT; zelem)
+            # Filter out spaces without z coordinates:
+            :z in propertynames(Spaces.coordinates_data(space)) || continue
+            # Skip spaces incompatible with Fields.bycolumn:
+            (
+                space isa Spaces.ExtrudedFiniteDifferenceSpace ||
+                space isa Spaces.SpectralElementSpace1D ||
+                space isa Spaces.SpectralElementSpace2D
+            ) || continue
+
+            Y = FieldFromNamedTuple(space, (; y = FT(1)))
+            zcf = Fields.coordinate_field(Y.y).z
+            Δz = Fields.dz_field(axes(zcf))
+            Δz_col = Δz[Fields.ColumnIndex((1, 1), 1)]
+            Δz_1 = parent(Δz_col)[1]
+            key = (space, zelem)
+            if !haskey(results, key)
+                results[key] =
+                    Dict(:maxerr => 0, :Δz_1 => FT(0), :∫y => [], :y => [])
+            end
+            ∫y = Spaces.level(similar(Y.y), fc_index(1, space))
+            ∫y .= 0
+            y = Y.y
+            @. y .= 1 + sin(zcf)
+            # Compute max error against analytic solution
+            maxerr = 0
+            Fields.bycolumn(axes(Y.y)) do colidx
+                Operators.column_integral_definite!(∫y[colidx], y[colidx])
+                maxerr = max(
+                    maxerr,
+                    maximum(abs.(parent(∫y[colidx]) .- ∫y_analytic)),
+                )
+                nothing
+            end
+            results[key][:Δz_1] = Δz_1
+            results[key][:maxerr] = maxerr
+            push!(results[key][:∫y], ∫y)
+            push!(results[key][:y], y)
+            nothing
+        end
+    end
+    maxerrs = map(key -> results[key][:maxerr], collect(keys(results)))
+    Δzs_1 = map(key -> results[key][:Δz_1], collect(keys(results)))
+    cr = convergence_rate(maxerrs, Δzs_1)
+    @test 2 < sum(abs.(cr)) / length(cr) < 2.01
+end
+
+ClimaCore.enable_threading() = false # launching threads allocates
+@testset "Allocation tests for integrals" begin
+    FT = Float64
+    for space in all_spaces(FT)
+        # Filter out spaces without z coordinates:
+        :z in propertynames(Spaces.coordinates_data(space)) || continue
+        Y = FieldFromNamedTuple(space, (; y = FT(1)))
+        zcf = Fields.coordinate_field(Y.y).z
+        ∫y = Spaces.level(similar(Y.y), fc_index(1, space))
+        ∫y .= 0
+        y = Y.y
+        @. y .= 1 + sin(zcf)
+        # Implicit bycolumn
+        Operators.column_integral_definite!(∫y, y) # compile first
+        p = @allocated Operators.column_integral_definite!(∫y, y)
+        @test p == 0
+        # Skip spaces incompatible with Fields.bycolumn:
+        (
+            space isa Spaces.ExtrudedFiniteDifferenceSpace ||
+            space isa Spaces.SpectralElementSpace1D ||
+            space isa Spaces.SpectralElementSpace2D
+        ) || continue
+        # Explicit bycolumn
+        integrate_bycolumn!(∫y, Y) # compile first
+        p = @allocated integrate_bycolumn!(∫y, Y)
+        @test p == 0
+        nothing
+    end
+    nothing
+end
+ClimaCore.enable_threading() = false
+
+@testset "ncolumns" begin
+    FT = Float64
+    for space in all_spaces(FT)
+        bycolumnable(space) || continue
+        hspace = Spaces.horizontal_space(space)
+        Nh = Topologies.nlocalelems(hspace)
+        Nq = Spaces.Quadratures.degrees_of_freedom(
+            Spaces.quadrature_style(hspace),
+        )
+        if nameof(typeof(space)) == :SpectralElementSpace1D
+            @test Fields.ncolumns(space) == Nh * Nq
+        else
+            @test Fields.ncolumns(space) == Nh * Nq * Nq
+        end
+        nothing
+    end
+    nothing
 end

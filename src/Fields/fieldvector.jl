@@ -35,8 +35,8 @@ mutable struct ScalarWrapper{T} <: AbstractArray{T, 0}
     val::T
 end
 Base.size(::ScalarWrapper) = ()
-Base.getindex(s::ScalarWrapper, args...) = s.val
-Base.setindex!(s::ScalarWrapper, value, args...) = s.val = value
+Base.getindex(s::ScalarWrapper) = s.val
+Base.setindex!(s::ScalarWrapper, value) = s.val = value
 Base.similar(s::ScalarWrapper) = ScalarWrapper(s.val)
 
 """
@@ -218,9 +218,10 @@ end
     dest::FieldVector,
     bc::Base.Broadcast.Broadcasted{<:Base.Broadcast.AbstractArrayStyle{0}},
 )
-    for symb in propertynames(dest)
+    map(propertynames(dest)) do symb
         p = parent(getfield(_values(dest), symb))
         copyto!(p, bc)
+        nothing
     end
     return dest
 end

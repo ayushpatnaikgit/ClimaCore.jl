@@ -5,7 +5,7 @@ import ..slab, ..slab_args, ..column, ..column_args, ..level
 import ..DataLayouts: DataLayouts, AbstractData, DataStyle
 import ..Domains
 import ..Topologies
-import ..Spaces: Spaces, AbstractSpace
+import ..Spaces: Spaces, AbstractSpace, AbstractPointSpace
 import ..Geometry: Geometry, Cartesian12Vector
 import ..Utilities: PlusHalf
 
@@ -256,6 +256,14 @@ local_geometry_field(space::AbstractSpace) =
 local_geometry_field(field::Field) = local_geometry_field(axes(field))
 
 
+"""
+    dz_field(field::Field)
+    dz_field(space::AbstractSpace)
+
+A `Field` containing the `Δz` values on the same space as the given field.
+"""
+dz_field(field::Field) = dz_field(axes(field))
+dz_field(space::AbstractSpace) = Field(Spaces.dz_data(space), space)
 
 include("broadcast.jl")
 include("mapreduce.jl")
