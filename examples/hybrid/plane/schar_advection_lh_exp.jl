@@ -345,6 +345,10 @@ function rhs_invariant!(dY, Y, _, t)
         top = Operators.SetCurl(Geometry.Contravariant2Vector(0.0)),
     )
     fω¹ .+= vcurlc2f.(cuₕ)
+
+
+    ᶠρ_b = Fields.level(Ic2f.(cρ), ClimaCore.Utilities.half)
+    ᶠρ_t = Fields.level(Ic2f.(cρ), 30)
     
     # cross product
     # convert to contravariant
