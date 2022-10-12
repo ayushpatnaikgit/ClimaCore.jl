@@ -347,8 +347,8 @@ function rhs_invariant!(dY, Y, _, t)
     fω¹ .+= vcurlc2f.(cuₕ)
 
 
-    ᶠρ_b = Fields.level(Ic2f.(cρ), ClimaCore.Utilities.half)
-    ᶠρ_t = Fields.level(Ic2f.(cρ), 30)
+#    ᶠρ_b = Fields.level(Ic2f.(cρ), ClimaCore.Utilities.half)
+#    ᶠρ_t = Fields.level(Ic2f.(cρ), 30)
     
     # cross product
     # convert to contravariant
@@ -422,10 +422,10 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-Δt = min(Lx / nx / np / 300, Lz / nz / 300) * 0.40
+Δt = min(Lx / nx / np / 300, Lz / nz / 300) * 0.50
 @show Δt
 
-timeend = 3600.0 * 10.0
+timeend = 3600.0 * 20.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
