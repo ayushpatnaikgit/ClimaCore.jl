@@ -350,9 +350,6 @@ function rhs_invariant!(dY, Y, _, t)
     cp = @. pressure(cρθ)
     @. duₕ -= hgrad(cp) / cρ
 
-    ρ₁ = Fields.level(cρ,1)
-    ρₙ = Fields.level(cρ,40)
-
     vgradc2fP = Operators.GradientC2F(
       bottom = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),
       top = Operators.SetGradient(Geometry.Covariant3Vector(0.0)),

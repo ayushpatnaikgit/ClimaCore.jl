@@ -341,7 +341,7 @@ function rhs_invariant!(dY, Y, _, t)
     fω¹ = hcurl.(fw)
     fω¹_bc = Fields.level(fω¹,ClimaCore.Utilities.half)
     vcurlc2f = Operators.CurlC2F(
-        bottom = Operators.SetCurl(fω¹_bc),
+        bottom = Operators.SetCurl(Geometry.Contravariant2Vector(0.0)),
         top = Operators.SetCurl(Geometry.Contravariant2Vector(0.0)),
     )
     fω¹ .+= vcurlc2f.(cuₕ)
@@ -425,7 +425,7 @@ using OrdinaryDiffEq
 Δt = min(Lx / nx / np / 300, Lz / nz / 300) * 0.50
 @show Δt
 
-timeend = 3600.0 * 20.0
+timeend = 3600.0 * 10.0
 function make_dss_func()
   _dss!(x::Fields.Field)=Spaces.weighted_dss!(x)
   _dss!(::Any)=nothing
