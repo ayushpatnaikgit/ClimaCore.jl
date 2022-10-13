@@ -171,7 +171,7 @@ function Base.similar(
 end
 
 @inline function Base.copyto!(dest::FV, src::FV) where {FV <: FieldVector}
-    for symb in propertynames(dest)
+    map(propertynames(dest)) do symb
         pd = parent(getproperty(dest, symb))
         ps = parent(getproperty(src, symb))
         copyto!(pd, ps)
@@ -207,7 +207,7 @@ end
     dest::FieldVector,
     bc::Base.Broadcast.Broadcasted{FieldVectorStyle},
 )
-    for symb in propertynames(dest)
+    map(propertynames(dest)) do symb
         p = parent(getfield(_values(dest), symb))
         copyto!(p, transform_broadcasted(bc, symb, axes(p)))
     end
