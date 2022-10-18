@@ -40,8 +40,8 @@ end
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 45,
-    zelem = 45,
+    xelem = 30,
+    zelem = 30,
     npoly = 4,
     warp_fn = warp_surface,
 )
@@ -175,14 +175,15 @@ function rhs_invariant!(dY, Y, _, t)
     cw = If2c.(fw)
     fuₕ = Ic2f.(cuₕ)
     # ==========
-    u₁_bc = Fields.level(Ic2f.(uₕ), ClimaCore.Utilities.half)
+    u₁_bc = Fields.level(Ic2f.(cuₕ), ClimaCore.Utilities.half)
     gⁱʲ = Fields.level(Fields.local_geometry_field(hv_face_space), ClimaCore.Utilities.half).gⁱʲ
     g13 = gⁱʲ.components.data.:3
     g11 = gⁱʲ.components.data.:1
     g33 = gⁱʲ.components.data.:4
-    u₃_bc = Geometry.Covariant3Vector.(-1 .* g13 .* u₁_bc.components.data.:1 ./ g33)
+    gratio = g13 ./ g33
+    u₃_bc = Geometry.Covariant3Vector.(-1 .* gratio .* u₁_bc.components.data.:1)
     apply_boundary_w = Operators.SetBoundaryOperator(bottom = Operators.SetValue(u₃_bc))
-    @. fw = apply_boundary_w(w)
+    @. fw = apply_boundary_w(fw)
     # ==========
     cw = If2c.(fw)
     cuw = Geometry.Covariant13Vector.(cuₕ) .+ Geometry.Covariant13Vector.(cw)
@@ -202,7 +203,7 @@ function rhs_invariant!(dY, Y, _, t)
     Spaces.weighted_dss!(dρe)
     Spaces.weighted_dss!(duₕ)
 
-    κ₄ = 1e7 # m^4/s
+    κ₄ = 1e8 # m^4/s
     @. dρe = -κ₄ * hwdiv(cρ * hgrad(χe))
     @. duₕ = -κ₄ * (hwgrad(hdiv(χuₕ)))
 
