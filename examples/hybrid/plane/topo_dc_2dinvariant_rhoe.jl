@@ -26,8 +26,19 @@ function warp_surface(coord)
   x = Geometry.component(coord,1)
   FT = eltype(x)
   ac = 5000
-  hc = 3500.0
-  h = hc / (1 + (x/ac)^2) + hc / (1 + ((x - 14000.0)/ac)^2)
+  hc = 4000.0
+  h = hc / (1 + (x/ac)^2) #+ hc / (1 + ((x - 14000.0)/ac)^2)
+  return h
+end
+
+function warp_height(coord)
+  x = Geometry.component(coord,1)
+  FT = eltype(x)
+  if abs(x) < 5000
+      h= FT(2000 * cos(π * x/10000)^2)
+  else
+    h= FT(0)
+  end
   return h
 end
 
@@ -44,6 +55,7 @@ function hvspace_2D(
     zelem = 30,
     npoly = 4,
     warp_fn = warp_surface,
+    #warp_fn = warp_height,
 )
     FT = Float64
     vertdomain = Domains.IntervalDomain(
@@ -175,7 +187,7 @@ function rhs_invariant!(dY, Y, _, t)
     cw = If2c.(fw)
     fuₕ = Ic2f.(cuₕ)
     # ==========
-    u₁_bc = Fields.level(Ic2f.(cuₕ), ClimaCore.Utilities.half)
+    u₁_bc = Fields.level(fuₕ, ClimaCore.Utilities.half)
     gⁱʲ = Fields.level(Fields.local_geometry_field(hv_face_space), ClimaCore.Utilities.half).gⁱʲ
     g13 = gⁱʲ.components.data.:3
     g11 = gⁱʲ.components.data.:1
@@ -184,6 +196,7 @@ function rhs_invariant!(dY, Y, _, t)
     u₃_bc = Geometry.Covariant3Vector.(-1 .* gratio .* u₁_bc.components.data.:1)
     apply_boundary_w = Operators.SetBoundaryOperator(bottom = Operators.SetValue(u₃_bc))
     @. fw = apply_boundary_w(fw)
+    Spaces.weighted_dss!(fw)
     # ==========
     cw = If2c.(fw)
     cuw = Geometry.Covariant13Vector.(cuₕ) .+ Geometry.Covariant13Vector.(cw)
@@ -241,19 +254,23 @@ function rhs_invariant!(dY, Y, _, t)
         top = Operators.SetCurl(Geometry.Contravariant2Vector(0.0)),
     )
 
-    fω¹ = hcurl.(fw)
-    fω¹ .+= vcurlc2f.(cuₕ)
+    fω² = hcurl.(fw)
+    fω² .+= vcurlc2f.(cuₕ)
+
+    cω² = hcurl.(cw) # Compute new center curl
+    cω² .+= If2c.(vcurlc2f.(cuₕ)) # Compute new centerl curl
 
     # cross product
     # convert to contravariant
     # these will need to be modified with topography
     fu =
-        Geometry.Contravariant13Vector.(Ic2f.(cuₕ)) .+
-        Geometry.Contravariant13Vector.(fw)
+        Geometry.Covariant13Vector.(Ic2f.(cuₕ)) .+
+        Geometry.Covariant13Vector.(fw)
     fu¹ = Geometry.project.(Ref(Geometry.Contravariant1Axis()), fu)
     fu³ = Geometry.project.(Ref(Geometry.Contravariant3Axis()), fu)
-    @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
-    @. duₕ -= If2c(fω¹ × fu³)
+    @. dw -= fω² × fu¹ # Covariant3Vector on faces
+    #@. duₕ -= If2c(fω¹ × fu³)
+    @. duₕ -= cω² × If2c.(fu³) # New option for curl
 
 
     @. duₕ -= hgrad(cp) / cρ
@@ -316,7 +333,7 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-timeend = 3600.0
+timeend = 3600.0 * 3
 Δt = 0.05
 prob = ODEProblem(rhs_invariant!, Y, (0.0, timeend))
 integrator = OrdinaryDiffEq.init(

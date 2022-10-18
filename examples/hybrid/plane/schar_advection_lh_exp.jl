@@ -51,7 +51,7 @@ function warp_schar(coord)
   FT = eltype(x)
   a = 5000
   λ = 4000
-  h₀ = 1000.0
+  h₀ = 250.0
   if abs(x) <= a
     h = h₀ * exp(-(x/a)^2) * (cos(π*x/λ))^2
   else
@@ -346,7 +346,9 @@ function rhs_invariant!(dY, Y, _, t)
     )
     fω¹ .+= vcurlc2f.(cuₕ)
 
-
+    cω¹ = hcurl.(cw)
+    cω¹ .+= If2c.(vcurlc2f.(cuₕ))
+  
 #    ᶠρ_b = Fields.level(Ic2f.(cρ), ClimaCore.Utilities.half)
 #    ᶠρ_t = Fields.level(Ic2f.(cρ), 30)
     
@@ -356,7 +358,8 @@ function rhs_invariant!(dY, Y, _, t)
     fu³ = @. Geometry.project(Geometry.Contravariant3Axis(), fuw) 
 
     @. dw -= fω¹ × fu¹ # Covariant3Vector on faces
-    @. duₕ -= If2c(fω¹ × fu³)
+    #@. duₕ -= If2c(fω¹ × fu³) # Old formulation
+    @. duₕ -= cω¹ × If2c.(fu³)
     @. duₕ -= hgrad(cp) / cρ
 
     vgradc2fP = Operators.GradientC2F(
