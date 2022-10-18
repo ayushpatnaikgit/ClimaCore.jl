@@ -25,9 +25,10 @@ function warp_surface(coord)
   # Ulrich and Guerra [2016 GMD]
   x = Geometry.component(coord,1)
   FT = eltype(x)
-  ac = 10000
-  hc = 2000.0
-  return hc / (1 + (x/ac)^2)
+  ac = 5000
+  hc = 3500.0
+  h = hc / (1 + (x/ac)^2) + hc / (1 + ((x - 14000.0)/ac)^2)
+  return h
 end
 
 function no_warp(coord)
@@ -39,8 +40,8 @@ end
 function hvspace_2D(
     xlim = (-π, π),
     zlim = (0, 4π),
-    xelem = 64,
-    zelem = 32,
+    xelem = 45,
+    zelem = 45,
     npoly = 4,
     warp_fn = warp_surface,
 )
@@ -73,7 +74,7 @@ function hvspace_2D(
 end
 
 # set up 2D domain - doubly periodic box
-hv_center_space, hv_face_space = hvspace_2D((-25600, 25600), (0, 6400))
+hv_center_space, hv_face_space = hvspace_2D((-25600, 25600), (0, 25000))
 
 const MSLP = 1e5 # mean sea level pressure
 const grav = 9.8 # gravitational constant
@@ -89,7 +90,7 @@ const T_0 = 273.16 # triple point temperature
 # Prognostic thermodynamic variable: Total Energy
 function init_dry_density_current_2d(x, z)
     x_c = 0.0
-    z_c = 3000.0
+    z_c = 7000.0
     r_c = 1.0
     x_r = 4000.0
     z_r = 2000.0
@@ -122,8 +123,22 @@ face_coords = Fields.coordinate_field(hv_face_space)
 Yc = map(coord -> init_dry_density_current_2d(coord.x, coord.z), coords)
 uₕ = map(_ -> Geometry.Covariant1Vector(0.0), coords)
 w = map(_ -> Geometry.Covariant3Vector(0.0), face_coords)
-Y = Fields.FieldVector(Yc = Yc, uₕ = uₕ, w = w)
+Ic2f = Operators.InterpolateC2F(
+ bottom = Operators.Extrapolate(),
+ top = Operators.Extrapolate(),
+)
+# ==========
+u₁_bc = Fields.level(Ic2f.(uₕ), ClimaCore.Utilities.half)
+gⁱʲ = Fields.level(Fields.local_geometry_field(hv_face_space), ClimaCore.Utilities.half).gⁱʲ
+g13 = gⁱʲ.components.data.:3
+g11 = gⁱʲ.components.data.:1
+g33 = gⁱʲ.components.data.:4
+u₃_bc = Geometry.Covariant3Vector.(-1 .* g13 .* u₁_bc.components.data.:1 ./ g33)
+apply_boundary_w = Operators.SetBoundaryOperator(bottom = Operators.SetValue(u₃_bc))
+@. w = apply_boundary_w(w)
+# ==========
 
+Y = Fields.FieldVector(Yc = Yc, uₕ = uₕ, w = w)
 energy_0 = sum(Y.Yc.ρe)
 mass_0 = sum(Y.Yc.ρ)
 
@@ -159,6 +174,17 @@ function rhs_invariant!(dY, Y, _, t)
 
     cw = If2c.(fw)
     fuₕ = Ic2f.(cuₕ)
+    # ==========
+    u₁_bc = Fields.level(Ic2f.(uₕ), ClimaCore.Utilities.half)
+    gⁱʲ = Fields.level(Fields.local_geometry_field(hv_face_space), ClimaCore.Utilities.half).gⁱʲ
+    g13 = gⁱʲ.components.data.:3
+    g11 = gⁱʲ.components.data.:1
+    g33 = gⁱʲ.components.data.:4
+    u₃_bc = Geometry.Covariant3Vector.(-1 .* g13 .* u₁_bc.components.data.:1 ./ g33)
+    apply_boundary_w = Operators.SetBoundaryOperator(bottom = Operators.SetValue(u₃_bc))
+    @. fw = apply_boundary_w(w)
+    # ==========
+    cw = If2c.(fw)
     cuw = Geometry.Covariant13Vector.(cuₕ) .+ Geometry.Covariant13Vector.(cw)
 
     ce = @. cρe / cρ
@@ -176,7 +202,7 @@ function rhs_invariant!(dY, Y, _, t)
     Spaces.weighted_dss!(dρe)
     Spaces.weighted_dss!(duₕ)
 
-    κ₄ = 0.0 # m^4/s
+    κ₄ = 1e7 # m^4/s
     @. dρe = -κ₄ * hwdiv(cρ * hgrad(χe))
     @. duₕ = -κ₄ * (hwgrad(hdiv(χuₕ)))
 
@@ -249,7 +275,7 @@ function rhs_invariant!(dY, Y, _, t)
     # Uniform 2nd order diffusion
     ∂c = Operators.GradientF2C()
     fρ = @. Ic2f(cρ)
-    κ₂ = 75.0 # m^2/s
+    κ₂ = 0.0 # m^2/s
 
     ᶠ∇ᵥuₕ = @. vgradc2f(cuₕ.components.data.:1)
     ᶜ∇ᵥw = @. ∂c(fw.components.data.:1)
@@ -289,8 +315,8 @@ rhs_invariant!(dYdt, Y, nothing, 0.0);
 
 # run!
 using OrdinaryDiffEq
-timeend = 900.0
-Δt = 0.3
+timeend = 3600.0
+Δt = 0.05
 prob = ODEProblem(rhs_invariant!, Y, (0.0, timeend))
 integrator = OrdinaryDiffEq.init(
     prob,
@@ -340,6 +366,54 @@ anim = Plots.@animate for u in sol.u
     Plots.plot(Fields.level(w, ClimaCore.Utilities.half))
 end
 Plots.mp4(anim, joinpath(path, "vel_w_level1.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    ᶠuw = @. Geometry.Covariant13Vector(Ic2f.(u.uₕ)) +
+       Geometry.Covariant13Vector(u.w)
+    u = @. Geometry.project(Geometry.UAxis(), ᶠuw)
+    Plots.plot(Fields.level(u, ClimaCore.Utilities.half))
+end
+Plots.mp4(anim, joinpath(path, "vel_fu_level1.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    ᶠuw = @. Geometry.Covariant13Vector(Ic2f.(u.uₕ)) +
+       Geometry.Covariant13Vector(u.w)
+    u = @. Geometry.project(Geometry.Covariant1Axis(), ᶠuw)
+    Plots.plot(Fields.level(u, ClimaCore.Utilities.half))
+end
+Plots.mp4(anim, joinpath(path, "vel_fcovariant1_level1.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    ᶠuw = @. Geometry.Covariant13Vector(Ic2f.(u.uₕ)) +
+       Geometry.Covariant13Vector(u.w)
+    u = @. Geometry.project(Geometry.Covariant3Axis(), ᶠuw)
+    Plots.plot(Fields.level(u, ClimaCore.Utilities.half))
+end
+Plots.mp4(anim, joinpath(path, "vel_fcovariant3_level1.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    ᶜuw = @. Geometry.Covariant13Vector(u.uₕ) +
+             Geometry.Covariant13Vector(If2c.(u.w))
+    w = @. Geometry.project(Geometry.WAxis(), ᶜuw)
+    Plots.plot(Fields.level(w, 1))
+end
+Plots.mp4(anim, joinpath(path, "vel_cw_level1.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    ᶜuw = @. Geometry.Covariant13Vector(u.uₕ) +
+             Geometry.Covariant13Vector(If2c.(u.w))
+    u = @. Geometry.project(Geometry.UAxis(), ᶜuw)
+    Plots.plot(Fields.level(u, 1))
+end
+Plots.mp4(anim, joinpath(path, "vel_cu_level1.mp4"), fps = 20)
+
+anim = Plots.@animate for u in sol.u
+    ᶠuw = @. Geometry.Covariant13Vector(Ic2f.(u.uₕ)) +
+       Geometry.Covariant13Vector(u.w)
+    w = @. Geometry.project(Geometry.WAxis(), ᶠuw)
+    Plots.plot(Fields.level(w, ClimaCore.Utilities.half + 1))
+end
+Plots.mp4(anim, joinpath(path, "vel_w_level2.mp4"), fps = 20)
 
 anim = Plots.@animate for u in sol.u
     ᶜuw = @. Geometry.Covariant13Vector(u.uₕ) +

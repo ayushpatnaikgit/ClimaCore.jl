@@ -77,7 +77,7 @@ function ExtrudedFiniteDifferenceSpace(
     # DSS the horizontal gradient of Z surface field to force
     # deriv continuity along horizontal element boundaries
     f∇Z = grad.(fZ)
-    Spaces.weighted_dss!(f∇Z)
+    #Spaces.weighted_dss!(f∇Z)
 
     # Interpolate horizontal gradient surface field to centers
     # used to compute ∂x∂ξ₃₃ (Δz) metric term
@@ -85,7 +85,7 @@ function ExtrudedFiniteDifferenceSpace(
 
     # DSS the interpolated horizontal gradients as well
     c∇Z = If2c.(f∇Z)
-    Spaces.weighted_dss!(c∇Z)
+    #Spaces.weighted_dss!(c∇Z)
 
     Ni, Nj, _, Nv, Nh = size(space.center_local_geometry)
     for h in 1:Nh, j in 1:Nj, i in 1:Ni

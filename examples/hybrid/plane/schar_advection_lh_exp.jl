@@ -51,7 +51,7 @@ function warp_schar(coord)
   FT = eltype(x)
   a = 5000
   λ = 4000
-  h₀ = 250.0
+  h₀ = 1000.0
   if abs(x) <= a
     h = h₀ * exp(-(x/a)^2) * (cos(π*x/λ))^2
   else
@@ -201,7 +201,7 @@ function rayleigh_sponge(z;
                          γ = 2.0)
     if z >= z_sponge
         r = (z - z_sponge) / (z_max - z_sponge)
-        β_sponge = α * sinpi(τ * r)^γ
+        β_sponge = α * (1 - cospi(τ * r))
         return β_sponge
     else
         return eltype(z)(0)
@@ -215,7 +215,7 @@ function rayleigh_sponge_x(x;
                          γ = 2.0)
     if abs(x) >= x_sponge
         r = (abs(x) - x_sponge) / (x_max - x_sponge)
-        β_sponge = α * sinpi(τ * r)^γ
+        β_sponge = α * (1 - cospi(τ * r))
         return β_sponge
     else
         return eltype(x)(0)
