@@ -67,4 +67,14 @@ area(space::Spaces.AbstractSpace) =
     ClimaComms.allreduce(comm_context(space), local_area(space), +)
 
 
+"""
+    z_extrema(space::AbstractSpace)
+
+A tuple of the vertical (z) extrema.
+"""
+function z_extrema(space::AbstractSpace)
+    vertical_domain = Topologies.domain(vertical_topology(space))
+    return (vertical_domain.coord_min.z, vertical_domain.coord_max.z)
+end
+
 end # module
