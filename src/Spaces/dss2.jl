@@ -89,6 +89,7 @@ function create_dss_buffer(
             recv_data,
             buffer_lengths,
             neighbor_pids,
+            ClimaComms.MPIPersistentSendRecvGraphContext,
         )
         send_buf_idx, recv_buf_idx =
             Topologies.compute_ghost_send_recv_idx(topology, Nij)
