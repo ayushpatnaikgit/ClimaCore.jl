@@ -227,4 +227,46 @@ end
         @test p == 0
     end
 end
+
+test_assign_svec!(Y) = test_assign_svec!(Y.c.uₕ_phys, Y.c.uₕ)
+function test_assign_svec!(uₕ_phys, uₕ)
+    @. uₕ_phys = StaticArrays.SVector(
+        Geometry.UVVector(uₕ).components.data.:1,
+        Geometry.UVVector(uₕ).components.data.:2,
+    )
+    return nothing
+end
+
+test_assign_tup!(Y) = test_assign_tup!(Y.c.uₕ_phys_tup, Y.c.uₕ)
+function test_assign_tup!(uₕ_phys_tup, uₕ)
+    @. uₕ_phys_tup = tuple(
+        Geometry.UVVector(uₕ).components.data.:1,
+        Geometry.UVVector(uₕ).components.data.:2,
+    )
+    return nothing
+end
+
+# https://github.com/CliMA/ClimaCore.jl/issues/1015
+@testset "Allocations when assigning SArrays and Tuples" begin
+    for space in all_spaces(Float32)
+        Y = Fields.FieldVector(
+            c = map(Fields.coordinate_field(space)) do coord
+                FT = Spaces.undertype(space)
+                (;
+                    uₕ = Geometry.Covariant12Vector(FT(0), FT(0)),
+                    uₕ_phys = StaticArrays.SVector(FT(0), FT(0)),
+                    uₕ_phys_tup = (FT(0), FT(0)),
+                )
+            end,
+        )
+
+        test_assign_svec!(Y) # compile first
+        p = @allocated test_assign_svec!(Y)
+        @test_broken p == 0
+
+        test_assign_tup!(Y) # compile first
+        p = @allocated test_assign_tup!(Y)
+        @test_broken p == 0
+    end
+end
 nothing
