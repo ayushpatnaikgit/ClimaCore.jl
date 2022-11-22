@@ -30,7 +30,7 @@ jobs:
             ${{ runner.os }}-
       - name: Install Paraview
         run: |
-          sudo apt-get update && sudo apt-get -y install paraview python3-paraview
+          sudo apt-get update && sudo apt list paraview -a && sudo apt install python3-paraview=5.7.0_4
       - name: Install Julia dependencies
         shell: julia --project=monorepo {0}
         run: |
