@@ -94,7 +94,7 @@ const CubedSphereSpectralElementField2D{V, S} = Field{
 } where {V <: AbstractData, S <: Spaces.CubedSphereSpectralElementSpace2D}
 
 
-Base.propertynames(field::Field) = propertynames(getfield(field, :values))
+@inline Base.propertynames(field::Field) = propertynames(getfield(field, :values))
 @inline field_values(field::Field) = getfield(field, :values)
 
 # Define the axes field to be the todata(bc) of the return field
