@@ -43,18 +43,18 @@ jobs:
         run: >
           julia --project=monorepo -e 'using Pkg; Pkg.test("ClimaCoreVTK")'
           && echo "TESTS_SUCCESSFUL=true" >> $GITHUB_ENV
-      - name: Render the VTK images
-        run: >
-          for f in lib/ClimaCoreVTK/test/output/*.vtu;
-          do
-            xvfb-run -a pvpython lib/ClimaCoreVTK/paraview/renderimage.py "$f" "$f.png";
-          done
-      - name: Upload test Artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: climacore-vtk-output
-          path: |
-            lib/ClimaCoreVTK/test/output/*.png
-      - name: Fail after artifacts if tests failed
-        if: ${{ env.TESTS_SUCCESSFUL != 'true' }}
-        run: exit 1
+#      - name: Render the VTK images
+#        run: >
+#          for f in lib/ClimaCoreVTK/test/output/*.vtu;
+#          do
+#            xvfb-run -a pvpython lib/ClimaCoreVTK/paraview/renderimage.py "$f" "$f.png";
+#          done
+#      - name: Upload test Artifacts
+#        uses: actions/upload-artifact@v2
+#        with:
+#          name: climacore-vtk-output
+#          path: |
+#            lib/ClimaCoreVTK/test/output/*.png
+#      - name: Fail after artifacts if tests failed
+#        if: ${{ env.TESTS_SUCCESSFUL != 'true' }}
+#        run: exit 1
